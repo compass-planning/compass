@@ -43,30 +43,32 @@ export const users = pgTable("users", {
   lastName:     text("last_name").notNull(),
   firmName:     text("firm_name"),
   jurisdiction: text("jurisdiction").notNull().default("CA"),
-  role:         text("role").notNull().default("advisor"),
-  level:              text("level").notNull().default("standard"),
   mustResetPassword:  boolean("must_reset_password").default(false),
-  gaId:               integer("ga_id").references((): any => users.id),
-  agentId:            text("agent_id"),
-  agency:             text("agency"),
   phone:              text("phone"),
   securityQuestion:   text("security_question"),
   securityAnswerHash: text("security_answer_hash"),
-  province:           text("province"),
-  locale:             text("locale").notNull().default("en"),
   totpSecret:         text("totp_secret"),
   totpEnabled:        boolean("totp_enabled").default(false),
   // ── Address ──────────────────────────────────────────────────────────────
   address:            text("address"),
   city:               text("city"),
+  province:           text("province"),
   usState:            text("us_state"),
   postalCode:         text("postal_code"),
+  // ── Subscription ─────────────────────────────────────────────────────────
+  subscriptionTier:   text("subscription_tier").notNull().default("trial"),   // "trial" | "monthly" | "annual"
+  subscriptionStatus: text("subscription_status").notNull().default("trialing"), // "trialing" | "active" | "past_due" | "canceled"
+  stripeCustomerId:   text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  trialEndsAt:        timestamp("trial_ends_at"),
+  currentPeriodEnd:   timestamp("current_period_end"),
   createdAt:    timestamp("created_at").defaultNow().notNull(),
   updatedAt:    timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertUserSchema = createInsertSchema(users)
-  .omit({ id: true, passwordHash: true, createdAt: true, updatedAt: true })
+  .omit({ id: true, passwordHash: true, createdAt: true, updatedAt: true,
+          stripeCustomerId: true, stripeSubscriptionId: true, trialEndsAt: true, currentPeriodEnd: true })
   .extend({ password: z.string().min(8) });
 export type User = typeof users.$inferSelect;
 
@@ -80,7 +82,6 @@ export const clients = pgTable("clients", {
   phone:                       text("phone"),
   dateOfBirth:                 text("date_of_birth"),
   province:                    text("province").default("ON"),
-  preferredLanguage:           text("preferred_language").notNull().default("en"),
   occupation:                  text("occupation"),
   employmentStatus:            text("employment_status"),
   annualIncome:                decimal("annual_income", { precision: 15, scale: 2 }),
@@ -532,65 +533,30 @@ export const scenarioComparisons = pgTable("scenario_comparisons", {
 export type ScenarioComparison     = typeof scenarioComparisons.$inferSelect;
 export type InsertScenarioComparison = typeof scenarioComparisons.$inferInsert;
 
-// ── LTC Analyses ──────────────────────────────────────────────────────────────
-export const ltcAnalyses = pgTable("ltc_analyses", {
-  id:                  serial("id").primaryKey(),
-  clientId:            integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  person:              text("person").notNull().default("primary"),
-  label:               text("label"),
-  currentAge:          integer("current_age").notNull().default(55),
-  province:            text("province").notNull().default("ON"),
-  dailyBenefit:        decimal("daily_benefit", { precision: 10, scale: 2 }).notNull().default("200"),
-  poolYears:           integer("pool_years").notNull().default(5),
-  eliminationDays:     integer("elimination_days").notNull().default(90),
-  inflationProtection: text("inflation_protection").notNull().default("none"),
-  estAnnualPremium:    decimal("est_annual_premium", { precision: 10, scale: 2 }),
-  careCostInflation:   decimal("care_cost_inflation", { precision: 5, scale: 4 }).notNull().default("0.04"),
-  estClaimAge:         integer("est_claim_age").notNull().default(80),
-  careLevel:           text("care_level").notNull().default("semi_private"),
-  hybridLifeBenefit:   decimal("hybrid_life_benefit", { precision: 10, scale: 2 }),
-  hybridLtcPct:        decimal("hybrid_ltc_pct", { precision: 5, scale: 2 }),
-  notes:               text("notes"),
-  resultData:          jsonb("result_data"),
-  createdAt:           timestamp("created_at").defaultNow().notNull(),
-  updatedAt:           timestamp("updated_at").defaultNow().notNull(),
+// ── Admin ─────────────────────────────────────────────────────────────────────
+export const adminUsers = pgTable("admin_users", {
+  id:           serial("id").primaryKey(),
+  email:        text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name:         text("name").notNull(),
+  role:         text("role").notNull().default("support"), // "super" | "support"
+  createdAt:    timestamp("created_at").defaultNow().notNull(),
+  updatedAt:    timestamp("updated_at").defaultNow().notNull(),
 });
-export type LtcAnalysis       = typeof ltcAnalyses.$inferSelect;
-export type InsertLtcAnalysis = typeof ltcAnalyses.$inferInsert;
+export type AdminUser = typeof adminUsers.$inferSelect;
 
-// ── DI Analyses ───────────────────────────────────────────────────────────────
-export const diAnalyses = pgTable("di_analyses", {
-  id:                    serial("id").primaryKey(),
-  clientId:              integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  person:                text("person").notNull().default("primary"),
-  label:                 text("label"),
-  grossMonthlyIncome:    decimal("gross_monthly_income", { precision: 10, scale: 2 }).notNull().default("0"),
-  occupationClass:       text("occupation_class").notNull().default("3A"),
-  definition:            text("definition").notNull().default("own_occ"),
-  waitingPeriodDays:     integer("waiting_period_days").notNull().default(90),
-  benefitPeriod:         text("benefit_period").notNull().default("age65"),
-  groupDiMonthly:        decimal("group_di_monthly", { precision: 10, scale: 2 }).notNull().default("0"),
-  groupDiEmployerPaid:   boolean("group_di_employer_paid").notNull().default(true),
-  individualDiMonthly:   decimal("individual_di_monthly", { precision: 10, scale: 2 }).notNull().default("0"),
-  cppDisabilityMonthly:  decimal("cpp_disability_monthly", { precision: 10, scale: 2 }).notNull().default("0"),
-  partialDisabilityPct:  decimal("partial_disability_pct", { precision: 5, scale: 2 }).notNull().default("0.50"),
-  colaPct:               decimal("cola_pct", { precision: 5, scale: 4 }).notNull().default("0.02"),
-  province:              text("province").notNull().default("ON"),
-  notes:                 text("notes"),
-  resultData:            jsonb("result_data"),
-  createdAt:             timestamp("created_at").defaultNow().notNull(),
-  updatedAt:             timestamp("updated_at").defaultNow().notNull(),
-});
-export type DiAnalysis       = typeof diAnalyses.$inferSelect;
-export type InsertDiAnalysis = typeof diAnalyses.$inferInsert;
-
-export const savedReports = pgTable("saved_reports", {
+export const supportTickets = pgTable("support_tickets", {
   id:          serial("id").primaryKey(),
-  clientId:    integer("client_id").notNull(),
-  title:       text("title").notNull(),
-  locale:      text("locale").notNull().default("en"),
-  sections:    text("sections").notNull().default("all"),
-  htmlContent: text("html_content").notNull(),
-  generatedAt: timestamp("generated_at").notNull().defaultNow(),
-  advisorId:   integer("advisor_id"),
+  userId:      integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  userEmail:   text("user_email"),
+  subject:     text("subject").notNull(),
+  body:        text("body").notNull(),
+  status:      text("status").notNull().default("open"),   // "open" | "in_progress" | "resolved" | "closed"
+  priority:    text("priority").notNull().default("normal"), // "low" | "normal" | "high" | "urgent"
+  assignedTo:  integer("assigned_to").references(() => adminUsers.id, { onDelete: "set null" }),
+  resolvedAt:  timestamp("resolved_at"),
+  notes:       text("notes"),  // internal admin notes
+  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  updatedAt:   timestamp("updated_at").defaultNow().notNull(),
 });
+export type SupportTicket = typeof supportTickets.$inferSelect;
