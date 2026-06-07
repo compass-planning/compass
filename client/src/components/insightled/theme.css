@@ -1,0 +1,222 @@
+/* ─────────────────────────────────────────────────────────────────────
+   Refined Theme — page-level scope
+   Soft slate-100 page · #f8fafc cards with subtle slate-200 borders
+   blue-600 → cyan-500 gradient as the single brand accent.
+   Sidebar sits OUTSIDE this scope and is unaffected.
+   ───────────────────────────────────────────────────────────────────── */
+
+.fp-insightled {
+  /* Page surfaces (LIGHT) */
+  --bg-page:  #f1f5f9;          /* slate-100 */
+  --bg-base:  #f1f5f9;
+  --bg-soft:  #f8fafc;          /* card / soft band */
+
+  /* Card surfaces (LIGHT — no longer dark navy) */
+  --bg-panel: #f8fafc;
+  --bg-card:  #f8fafc;
+  --bg-card-2: #ffffff;
+
+  /* Text */
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary:  #94a3b8;
+
+  /* Card-text vars retained for backward compatibility — now match page text */
+  --card-text-primary:   #0f172a;
+  --card-text-secondary: #475569;
+  --card-text-tertiary:  #94a3b8;
+
+  /* Brand + utility accents */
+  --accent-blue:   #2563eb;
+  --accent-cyan:   #06b6d4;
+  --accent-purple: #8b5cf6;
+  --accent-green:  #10b981;
+  --accent-amber:  #f59e0b;
+  --accent-rose:   #f43f5e;
+
+  /* Borders */
+  --border-subtle: rgba(15, 23, 42, 0.06);
+  --border-light:  rgba(15, 23, 42, 0.10);
+  --card-border-subtle: rgba(15, 23, 42, 0.06);
+  --card-border-light:  rgba(15, 23, 42, 0.10);
+
+  font-family: -apple-system, "Inter", "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100%;
+}
+
+.fp-insightled .font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Cards — `.fp-insightled-card` and any legacy `.bg-white` surface
+   become a refined light card (#f8fafc + subtle slate-200/80 border).
+   ───────────────────────────────────────────────────────────────────── */
+.fp-insightled-card,
+.fp-insightled .bg-white {
+  background-color: #f8fafc !important;
+  color: #0f172a;
+  border: 1px solid rgb(226 232 240 / 0.8) !important;
+  border-radius: 0.75rem;
+  contain: layout style;
+}
+
+/* Optional gradient top edge (opt-in via .fp-card-accent class) */
+.fp-insightled-card.fp-card-accent::before,
+.fp-insightled .bg-white.fp-card-accent::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background-image: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+.fp-insightled-card,
+.fp-insightled .bg-white { position: relative; overflow: hidden; }
+
+/* AI glow — softened for light theme */
+.fp-insightled-ai-glow { position: relative; }
+.fp-insightled-ai-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.35), rgba(6, 182, 212, 0.35));
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.5;
+  filter: blur(8px);
+}
+
+.fp-insightled .text-gradient-ai {
+  background: linear-gradient(90deg, #2563eb, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.fp-insightled-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.fp-insightled-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.fp-insightled-scrollbar::-webkit-scrollbar-thumb { background: rgb(203 213 225); border-radius: 4px; }
+.fp-insightled-scrollbar::-webkit-scrollbar-thumb:hover { background: rgb(148 163 184); }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Legacy Tailwind utility overrides — keep the page light & cohesive.
+   These previously remapped colors to dark-card values; now they leave
+   text/borders in their normal slate ranges.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Subtle accent tints on the light page (used by status pills) */
+.fp-insightled .bg-blue-50    { background-color: rgba(37, 99, 235, 0.08) !important; }
+.fp-insightled .bg-cyan-50    { background-color: rgba(6, 182, 212, 0.10) !important; }
+.fp-insightled .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.10) !important; }
+.fp-insightled .bg-green-50   { background-color: rgba(16, 185, 129, 0.10) !important; }
+.fp-insightled .bg-purple-50  { background-color: rgba(139, 92, 246, 0.10) !important; }
+.fp-insightled .bg-amber-50   { background-color: rgba(245, 158, 11, 0.12) !important; }
+.fp-insightled .bg-yellow-50  { background-color: rgba(245, 158, 11, 0.12) !important; }
+.fp-insightled .bg-orange-50  { background-color: rgba(249, 115, 22, 0.10) !important; }
+.fp-insightled .bg-red-50     { background-color: rgba(244, 63, 94, 0.10) !important; }
+.fp-insightled .bg-rose-50    { background-color: rgba(244, 63, 94, 0.10) !important; }
+.fp-insightled .bg-pink-50    { background-color: rgba(236, 72, 153, 0.10) !important; }
+.fp-insightled .bg-violet-50  { background-color: rgba(167, 139, 250, 0.10) !important; }
+.fp-insightled .bg-indigo-50  { background-color: rgba(99, 102, 241, 0.10) !important; }
+
+/* Legacy KoC navy buttons — re-skin to the new brand gradient */
+.fp-insightled .bg-\[\#0c1e3a\],
+.fp-insightled .bg-\[\#0e2a4a\] {
+  background-image: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%) !important;
+  background-color: transparent !important;
+  color: #ffffff !important;
+}
+.fp-insightled .hover\:bg-\[\#0e2a4a\]:hover {
+  background-image: linear-gradient(90deg, #1d4ed8 0%, #0891b2 100%) !important;
+}
+.fp-insightled .text-\[\#0c1e3a\]   { color: #2563eb !important; }
+.fp-insightled .border-\[\#0c1e3a\] { border-color: #2563eb !important; }
+
+/* Inputs — refined chrome (cyan focus ring) */
+.fp-insightled input[type="text"],
+.fp-insightled input[type="number"],
+.fp-insightled input[type="date"],
+.fp-insightled input[type="email"],
+.fp-insightled input[type="password"],
+.fp-insightled input[type="search"],
+.fp-insightled input[type="tel"],
+.fp-insightled input[type="url"],
+.fp-insightled select,
+.fp-insightled textarea {
+  background-color: #ffffff;
+  color: #0f172a;
+  border-color: rgb(226 232 240);
+  color-scheme: light;
+}
+.fp-insightled input::placeholder,
+.fp-insightled textarea::placeholder { color: rgb(148 163 184); }
+
+.fp-insightled input:focus,
+.fp-insightled select:focus,
+.fp-insightled textarea:focus {
+  border-color: #06b6d4 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15) !important;
+}
+
+/* Soft daylight shadows */
+.fp-insightled .shadow-sm { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important; }
+.fp-insightled .shadow    { box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06) !important; }
+.fp-insightled .shadow-md { box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important; }
+.fp-insightled .shadow-lg { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10) !important; }
+.fp-insightled .shadow-xl { box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12) !important; }
+
+/* Tables */
+.fp-insightled table { color: var(--text-secondary); }
+.fp-insightled thead { color: var(--text-tertiary); }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Shadcn semantic tokens — light, brand-aligned
+   ───────────────────────────────────────────────────────────────────── */
+.fp-insightled {
+  --background:           210 40% 96.1%;
+  --foreground:           222 47% 11%;
+  --card:                 210 40% 98%;
+  --card-foreground:      222 47% 11%;
+  --popover:              0 0% 100%;
+  --popover-foreground:   222 47% 11%;
+  --primary:              217 91% 50%;     /* blue-600 */
+  --primary-foreground:   0 0% 100%;
+  --secondary:            210 40% 96.1%;
+  --secondary-foreground: 222 47% 11%;
+  --muted:                210 40% 96.1%;
+  --muted-foreground:     215 16% 47%;
+  --accent:               188 86% 53%;     /* cyan-500 */
+  --accent-foreground:    222 47% 11%;
+  --destructive:          0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border:               214 32% 91%;
+  --input:                214 32% 91%;
+  --ring:                 188 86% 53%;
+}
+
+/* Apply card chrome to .bg-card surfaces too (TaxTab, EstateNotesTab etc.) */
+.fp-insightled .bg-card {
+  background-color: #f8fafc !important;
+  border: 1px solid rgb(226 232 240 / 0.8) !important;
+  border-radius: 0.75rem;
+  color: #0f172a;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Sub-tab strip used by HubShell — light look with gradient underline
+   ───────────────────────────────────────────────────────────────────── */
+.fp-insightled-subtab-active {
+  color: #0f172a;
+  border-bottom: 2px solid #06b6d4;
+  margin-bottom: -1px;
+  font-weight: 600;
+}
+.fp-insightled-subtab-inactive {
+  color: #94a3b8;
+  border-bottom: 2px solid transparent;
+}
+.fp-insightled-subtab-inactive:hover { color: #0f172a; }

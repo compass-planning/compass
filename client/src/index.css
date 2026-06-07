@@ -1,0 +1,176 @@
+@import "./components/insightled/theme.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: hsl(210 40% 96.1%); /* slate-100 page */
+  color: hsl(222 47% 11%);
+}
+
+/* ── Refined Theme — design tokens (HSL, shadcn-compatible) ───────────── */
+@layer base {
+  :root {
+    /* Surfaces */
+    --background:         210 40% 96.1%;   /* slate-100  page */
+    --foreground:         222 47% 11%;     /* slate-900  text */
+    --card:               210 40% 98%;     /* #f8fafc    card */
+    --card-foreground:    222 47% 11%;
+    --popover:            0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Brand accents */
+    --primary:            217 91% 50%;     /* blue-600   primary action */
+    --primary-foreground: 0 0% 100%;
+    --accent:             188 86% 53%;     /* cyan-500   secondary accent */
+    --accent-foreground:  222 47% 11%;
+    --secondary:          210 40% 96.1%;
+    --secondary-foreground: 222 47% 11%;
+
+    /* Muted neutrals */
+    --muted:              210 40% 96.1%;
+    --muted-foreground:   215 16% 47%;     /* slate-500 */
+
+    /* States */
+    --destructive:        0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success:            160 84% 39%;
+    --success-foreground: 0 0% 100%;
+    --warning:            38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    /* Lines & focus */
+    --border:             214 32% 91%;     /* slate-200 */
+    --input:              214 32% 91%;
+    --ring:               188 86% 53%;     /* cyan-500 focus */
+    --radius:             0.75rem;
+  }
+}
+
+/* ── Brand gradient utilities (used everywhere) ───────────────────────── */
+.bg-brand-gradient {
+  background-image: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  color: #fff;
+}
+.bg-brand-gradient:hover,
+.hover\:bg-brand-gradient-hover:hover {
+  background-image: linear-gradient(90deg, #1d4ed8 0%, #0891b2 100%);
+}
+
+/* Soft tints (translucent gradient washes) */
+.bg-brand-soft   { background-image: linear-gradient(90deg, rgba(37,99,235,.06), rgba(6,182,212,.06)); }
+.bg-brand-softer { background-image: linear-gradient(90deg, rgba(37,99,235,.04), rgba(6,182,212,.04)); }
+.bg-brand-tint   { background-image: linear-gradient(90deg, rgba(37,99,235,.10), rgba(6,182,212,.10)); }
+
+.text-brand-gradient {
+  background: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Card chrome ─────────────────────────────────────────────────────── */
+.fp-card {
+  background-color: #f8fafc;
+  border: 1px solid rgb(226 232 240 / 0.8);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  position: relative;
+  overflow: hidden;
+}
+.fp-card-accent::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background-image: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  border-radius: 0.75rem 0.75rem 0 0;
+  z-index: 1;
+}
+
+/* ── Input chrome ────────────────────────────────────────────────────── */
+.fp-input {
+  width: 100%;
+  background-color: #fff;
+  border: 1px solid rgb(226 232 240);   /* slate-200 */
+  border-radius: 0.5rem;                /* rounded-lg */
+  padding: 0.5rem 0.75rem;              /* py-2 px-3 */
+  font-size: 0.875rem;                  /* text-sm */
+  color: rgb(15 23 42);                 /* slate-900 */
+  transition: border-color .15s, box-shadow .15s;
+}
+.fp-input:focus {
+  outline: none;
+  border-color: rgb(96 165 250);        /* blue-400 */
+  box-shadow: 0 0 0 2px rgb(96 165 250 / 0.40);
+}
+.fp-input::placeholder { color: rgb(148 163 184); }
+
+/* Soft scrollbars */
+*::-webkit-scrollbar       { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgb(203 213 225); border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: rgb(148 163 184); }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Shadcn utility classes (kept for component compatibility) ────────── */
+.bg-background    { background-color: hsl(var(--background)); }
+.bg-foreground    { background-color: hsl(var(--foreground)); }
+.bg-card          { background-color: hsl(var(--card)); }
+.bg-primary       { background-color: hsl(var(--primary)); }
+.bg-secondary     { background-color: hsl(var(--secondary)); }
+.bg-muted         { background-color: hsl(var(--muted)); }
+.bg-muted\/30     { background-color: hsl(var(--muted) / 0.3); }
+.bg-muted\/50     { background-color: hsl(var(--muted) / 0.5); }
+.bg-accent        { background-color: hsl(var(--accent)); }
+.bg-destructive   { background-color: hsl(var(--destructive)); }
+.bg-destructive\/10 { background-color: hsl(var(--destructive) / 0.1); }
+
+.text-foreground       { color: hsl(var(--foreground)); }
+.text-card-foreground  { color: hsl(var(--card-foreground)); }
+.text-primary          { color: hsl(var(--primary)); }
+.text-primary-foreground { color: hsl(var(--primary-foreground)); }
+.text-secondary-foreground { color: hsl(var(--secondary-foreground)); }
+.text-muted-foreground { color: hsl(var(--muted-foreground)); }
+.text-muted-foreground\/50 { color: hsl(var(--muted-foreground) / 0.5); }
+.text-accent-foreground { color: hsl(var(--accent-foreground)); }
+.text-destructive      { color: hsl(var(--destructive)); }
+
+.border-border    { border-color: hsl(var(--border)); }
+.border-input     { border-color: hsl(var(--input)); }
+.border-primary   { border-color: hsl(var(--primary)); }
+.border-destructive { border-color: hsl(var(--destructive)); }
+
+.ring-ring        { --tw-ring-color: hsl(var(--ring)); }
+.ring-primary\/20 { --tw-ring-color: hsl(var(--primary) / 0.2); }
+
+.hover\:bg-muted:hover        { background-color: hsl(var(--muted)); }
+.hover\:bg-primary\/90:hover  { background-color: hsl(var(--primary) / 0.9); }
+.hover\:text-foreground:hover { color: hsl(var(--foreground)); }
+.hover\:text-primary:hover    { color: hsl(var(--primary)); }
+
+.focus\:ring-primary\/20:focus { --tw-ring-color: hsl(var(--primary) / 0.2); }
+.focus\:border-primary:focus   { border-color: hsl(var(--primary)); }
+
+.rounded-\[var\(--radius\)\] { border-radius: var(--radius); }
+
+/* Hide internal FinancialPlanningContent sidebar when embedded */
+[data-testid="fp-popout-container"] > aside {
+  display: none !important;
+}
+[data-testid="fp-popout-container"] {
+  flex-direction: column;
+}
+
+/* Animation classes used by Compass Planning */
+.animate-in { animation: animateIn 0.2s ease-out; }
+.fade-in { animation-name: fadeIn; }
+@keyframes animateIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.font-display { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 700; }

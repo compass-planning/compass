@@ -1,0 +1,16 @@
+{group.map(p => (
+  <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+    <div className="flex items-center gap-4 flex-1 min-w-0">
+      <span className={`text-xs font-bold w-20 flex-shrink-0 ${p.label === "Household Combined" ? "text-indigo-600" : p.label === "Spouse" ? "text-pink-600" : "text-blue-600"}`}>{p.label}</span>
+      <span className="text-xs text-gray-500">Age {p.currentAge} - {p.retirementAge}</span>
+      <span className="text-xs text-gray-500">RRSP {fmt$(p.currentRrsp)}</span>
+      <span className="text-xs text-gray-500">TFSA {fmt$(p.currentTfsa)}</span>
+      <span className="text-xs text-gray-500">Income {fmt$(p.desiredIncome)}</span>
+      {p.successRate && <span className={`text-xs font-bold ${Number(p.successRate) >= 85 ? "text-emerald-600" : Number(p.successRate) >= 70 ? "text-amber-600" : "text-red-600"}`}>{p.successRate}%</span>}
+    </div>
+    <div className="flex gap-1 flex-shrink-0">
+      <button onClick={() => startEdit(p)} className="p-1 text-gray-300 hover:text-[#0c1e3a]"><Pencil className="w-3.5 h-3.5" /></button>
+      <button onClick={() => { if(confirm("Delete?")) del(p.id); }} className="p-1 text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+    </div>
+  </div>
+))}
