@@ -282,11 +282,13 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center mb-8">
-            <img
-              src="/compass-logo.svg"
-              alt="Compass Planning"
-              className="w-48 object-contain"
-            />
+            <div className="bg-[#0c1e3a] rounded-2xl px-6 py-4">
+              <img
+                src="/compass-logo.svg"
+                alt="Compass Planning"
+                className="w-48 object-contain"
+              />
+            </div>
           </div>
 
           {/* ── Login / Register ── */}
