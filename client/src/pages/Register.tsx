@@ -92,7 +92,7 @@ function PasswordStrength({ password }: { password: string }) {
   if (!password) return null;
   const bar = score <= 1 ? { w: "20%", c: "#ef4444", l: "Weak" }
     : score <= 3 ? { w: `${score * 20}%`, c: "#f59e0b", l: "Fair" }
-    : score <= 4 ? { w: "80%", c: "#06b6d4", l: "Good" }
+    : score <= 4 ? { w: "80%", c: "#A78BFA", l: "Good" }
     : { w: "100%", c: "#10b981", l: "Strong" };
   return (
     <div className="space-y-1.5 pt-1">
@@ -182,12 +182,12 @@ export function Register({ onSuccess, onLogin }: Props) {
   // ── Step 1: Plan picker ────────────────────────────────────────────────────
   if (step === "plan") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#0c1e3a] to-slate-900 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#2d1b69] to-slate-900 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-5xl">
 
           {/* Header */}
           <div className="text-center mb-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-500/10 border border-cyan-500/20 rounded-full text-cyan-400 text-xs font-semibold mb-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 text-xs font-semibold mb-4">
               Personal Financial Planning · Canada &amp; USA
             </div>
             <h1 className="text-4xl font-bold text-white mb-3">Build your financial plan</h1>
@@ -203,14 +203,14 @@ export function Register({ onSuccess, onLogin }: Props) {
                 className={`relative text-left rounded-2xl border p-6 transition-all duration-200 focus:outline-none ${
                   selectedPlan === plan.id
                     ? plan.highlight
-                      ? "border-cyan-400 bg-cyan-500/5 ring-2 ring-cyan-400/30"
-                      : "border-blue-400 bg-blue-500/5 ring-2 ring-blue-400/30"
+                      ? "border-violet-400 bg-violet-500/5 ring-2 ring-violet-400/30"
+                      : "border-violet-400 bg-violet-500/5 ring-2 ring-violet-400/30"
                     : "border-white/10 bg-white/3 hover:border-white/20 hover:bg-white/5"
                 }`}
               >
                 {plan.highlight && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="px-3 py-1 bg-cyan-500 text-white text-xs font-bold rounded-full">Most Popular</span>
+                    <span className="px-3 py-1 bg-violet-500 text-white text-xs font-bold rounded-full">Most Popular</span>
                   </div>
                 )}
                 {plan.savingsBadge && (
@@ -225,7 +225,7 @@ export function Register({ onSuccess, onLogin }: Props) {
                     <p className="text-slate-400 text-sm mt-0.5">{plan.description}</p>
                   </div>
                   <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors ${
-                    selectedPlan === plan.id ? "border-cyan-400 bg-cyan-400" : "border-white/20"
+                    selectedPlan === plan.id ? "border-violet-400 bg-violet-400" : "border-white/20"
                   }`}>
                     {selectedPlan === plan.id && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
                   </div>
@@ -239,7 +239,7 @@ export function Register({ onSuccess, onLogin }: Props) {
                 <ul className="space-y-2">
                   {plan.features.map(f => (
                     <li key={f} className="flex items-center gap-2 text-sm text-slate-300">
-                      <Check className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                      <Check className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
                       {f}
                     </li>
                   ))}
@@ -252,14 +252,14 @@ export function Register({ onSuccess, onLogin }: Props) {
           <div className="flex flex-col items-center gap-3">
             <button
               onClick={() => setStep("form")}
-              className="w-full max-w-sm flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/20"
+              className="w-full max-w-sm flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-violet-600 to-purple-400 hover:from-violet-500 hover:to-purple-400 text-white font-semibold rounded-xl transition-all shadow-lg shadow-violet-500/20"
             >
               {PLANS.find(p => p.id === selectedPlan)?.cta}
               <ChevronRight className="w-4 h-4" />
             </button>
             <p className="text-slate-500 text-sm">
               Already have an account?{" "}
-              <button onClick={onLogin} className="text-cyan-400 hover:text-cyan-300 font-medium">Sign in</button>
+              <button onClick={onLogin} className="text-violet-400 hover:text-violet-300 font-medium">Sign in</button>
             </p>
           </div>
         </div>
@@ -271,7 +271,7 @@ export function Register({ onSuccess, onLogin }: Props) {
   const chosen = PLANS.find(p => p.id === selectedPlan)!;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#0c1e3a] to-slate-900 flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#2d1b69] to-slate-900 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md">
 
         {/* Back */}
@@ -290,7 +290,7 @@ export function Register({ onSuccess, onLogin }: Props) {
                 {selectedPlan === "trial" ? "14-day free trial · no card required" : `${chosen.name} · ${chosen.price}${chosen.period}`}
               </p>
             </div>
-            <div className="px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/20 rounded-full text-cyan-400 text-xs font-semibold">
+            <div className="px-2.5 py-1 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 text-xs font-semibold">
               {chosen.name}
             </div>
           </div>
@@ -307,7 +307,7 @@ export function Register({ onSuccess, onLogin }: Props) {
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">First name *</label>
                 <input
-                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 focus:bg-white/8 transition-colors"
+                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-violet-400/50 focus:bg-white/8 transition-colors"
                   placeholder="Jane"
                   value={form.firstName}
                   onChange={e => set("firstName", e.target.value)}
@@ -316,7 +316,7 @@ export function Register({ onSuccess, onLogin }: Props) {
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Last name *</label>
                 <input
-                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 focus:bg-white/8 transition-colors"
+                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-violet-400/50 focus:bg-white/8 transition-colors"
                   placeholder="Smith"
                   value={form.lastName}
                   onChange={e => set("lastName", e.target.value)}
@@ -329,7 +329,7 @@ export function Register({ onSuccess, onLogin }: Props) {
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Email address *</label>
               <input
                 type="email"
-                className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 transition-colors"
+                className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-violet-400/50 transition-colors"
                 placeholder="jane@smithfinancial.ca"
                 value={form.email}
                 onChange={e => set("email", e.target.value)}
@@ -342,7 +342,7 @@ export function Register({ onSuccess, onLogin }: Props) {
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Province</label>
                 <select
-                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-400/50 transition-colors"
+                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-violet-400/50 transition-colors"
                   value={form.province}
                   onChange={e => set("province", e.target.value)}
                 >
@@ -352,7 +352,7 @@ export function Register({ onSuccess, onLogin }: Props) {
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Jurisdiction</label>
                 <select
-                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-400/50 transition-colors"
+                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-violet-400/50 transition-colors"
                   value={form.jurisdiction}
                   onChange={e => set("jurisdiction", e.target.value)}
                 >
@@ -368,7 +368,7 @@ export function Register({ onSuccess, onLogin }: Props) {
               <div className="relative">
                 <input
                   type={showPw ? "text" : "password"}
-                  className="w-full px-3 py-2.5 pr-10 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 transition-colors"
+                  className="w-full px-3 py-2.5 pr-10 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-violet-400/50 transition-colors"
                   placeholder="Min 12 characters"
                   value={form.password}
                   onChange={e => set("password", e.target.value)}
@@ -389,14 +389,14 @@ export function Register({ onSuccess, onLogin }: Props) {
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Security question</label>
               <select
-                className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-400/50 transition-colors mb-2"
+                className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-violet-400/50 transition-colors mb-2"
                 value={form.securityQuestion}
                 onChange={e => set("securityQuestion", e.target.value)}
               >
                 {SECURITY_QUESTIONS.map(q => <option key={q} value={q} className="bg-slate-900">{q}</option>)}
               </select>
               <input
-                className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 transition-colors"
+                className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-violet-400/50 transition-colors"
                 placeholder="Your answer"
                 value={form.securityAnswer}
                 onChange={e => set("securityAnswer", e.target.value)}
@@ -406,7 +406,7 @@ export function Register({ onSuccess, onLogin }: Props) {
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 disabled:opacity-50 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/20"
+              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-violet-600 to-purple-400 hover:from-violet-500 hover:to-purple-400 disabled:opacity-50 text-white font-semibold rounded-xl transition-all shadow-lg shadow-violet-500/20"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {loading
@@ -425,7 +425,7 @@ export function Register({ onSuccess, onLogin }: Props) {
 
         <p className="text-center text-slate-500 text-sm mt-4">
           Already have an account?{" "}
-          <button onClick={onLogin} className="text-cyan-400 hover:text-cyan-300 font-medium">Sign in</button>
+          <button onClick={onLogin} className="text-violet-400 hover:text-violet-300 font-medium">Sign in</button>
         </p>
       </div>
     </div>

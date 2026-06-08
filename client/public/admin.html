@@ -18,11 +18,11 @@
       --text:      #e2e8f0;
       --muted:     #64748b;
       --muted2:    #94a3b8;
-      --accent:    #0052FF;
-      --green:     #00DF89;
+      --accent:    #7C3AED;
+      --green:     #A78BFA;
       --red:       #f43f5e;
       --amber:     #f59e0b;
-      --blue-dim:  rgba(0,82,255,0.12);
+      --blue-dim:  rgba(124,58,237,0.12);
       --green-dim: rgba(0,223,137,0.1);
       --red-dim:   rgba(244,63,94,0.12);
       --amber-dim: rgba(245,158,11,0.12);
@@ -46,7 +46,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: radial-gradient(ellipse at 30% 20%, rgba(0,82,255,0.08) 0%, transparent 60%),
+      background: radial-gradient(ellipse at 30% 20%, rgba(124,58,237,0.08) 0%, transparent 60%),
                   radial-gradient(ellipse at 80% 80%, rgba(0,223,137,0.05) 0%, transparent 50%),
                   var(--bg);
     }
@@ -71,9 +71,9 @@
       gap: 6px;
       padding: 3px 10px;
       background: var(--blue-dim);
-      border: 1px solid rgba(0,82,255,0.25);
+      border: 1px solid rgba(124,58,237,0.25);
       border-radius: 4px;
-      color: #6699ff;
+      color: #a78bfa;
       font-family: var(--font-mono);
       font-size: 11px;
       letter-spacing: 0.08em;
@@ -123,7 +123,7 @@
     }
     .topbar img { height: 28px; }
     .topbar-sep { width: 1px; height: 20px; background: var(--border2); }
-    .topbar-label { font-family: var(--font-mono); font-size: 11px; color: #6699ff; letter-spacing: 0.1em; }
+    .topbar-label { font-family: var(--font-mono); font-size: 11px; color: #a78bfa; letter-spacing: 0.1em; }
     .topbar-spacer { flex: 1; }
     .topbar-admin { font-size: 13px; color: var(--muted2); }
     .btn-logout {
@@ -182,7 +182,7 @@
     .stat-value { font-family: var(--font-mono); font-size: 28px; font-weight: 500; }
     .stat-sub   { font-size: 12px; color: var(--muted2); margin-top: 4px; }
     .stat-green { color: var(--green); }
-    .stat-blue  { color: #6699ff; }
+    .stat-blue  { color: #a78bfa; }
     .stat-amber { color: var(--amber); }
     .stat-red   { color: var(--red); }
 
@@ -231,10 +231,10 @@
       font-family: var(--font-mono); font-size: 11px; font-weight: 500;
     }
     .badge-active   { background: var(--green-dim);  color: var(--green); }
-    .badge-trialing { background: var(--blue-dim);   color: #6699ff; }
+    .badge-trialing { background: var(--blue-dim);   color: #a78bfa; }
     .badge-pastdue  { background: var(--amber-dim);  color: var(--amber); }
     .badge-canceled { background: rgba(100,116,139,0.15); color: var(--muted2); }
-    .badge-open     { background: var(--blue-dim);   color: #6699ff; }
+    .badge-open     { background: var(--blue-dim);   color: #a78bfa; }
     .badge-progress { background: var(--amber-dim);  color: var(--amber); }
     .badge-resolved { background: var(--green-dim);  color: var(--green); }
     .badge-closed   { background: rgba(100,116,139,0.15); color: var(--muted2); }
@@ -326,11 +326,11 @@
     /* ── Ticket form ───────────────────────────────────────────── */
     .btn-add {
       padding: 7px 14px; background: var(--blue-dim);
-      border: 1px solid rgba(0,82,255,0.25); border-radius: var(--radius);
-      color: #6699ff; font-size: 13px; cursor: pointer; font-family: var(--font-sans);
+      border: 1px solid rgba(124,58,237,0.25); border-radius: var(--radius);
+      color: #a78bfa; font-size: 13px; cursor: pointer; font-family: var(--font-sans);
       transition: all 0.12s;
     }
-    .btn-add:hover { background: rgba(0,82,255,0.18); }
+    .btn-add:hover { background: rgba(124,58,237,0.18); }
 
     /* ── Loading spinner ───────────────────────────────────────── */
     .loading { color: var(--muted2); font-size: 13px; padding: 32px; text-align: center; }
@@ -393,7 +393,7 @@
       <div class="nav-section">Support</div>
       <button class="nav-item" onclick="showPage('tickets')" id="nav-tickets">
         <span class="icon">◻</span> Tickets
-        <span id="open-ticket-count" style="margin-left:auto;background:var(--blue-dim);color:#6699ff;padding:1px 6px;border-radius:4px;font-family:var(--font-mono);font-size:11px;display:none"></span>
+        <span id="open-ticket-count" style="margin-left:auto;background:var(--blue-dim);color:#a78bfa;padding:1px 6px;border-radius:4px;font-family:var(--font-mono);font-size:11px;display:none"></span>
       </button>
     </nav>
 

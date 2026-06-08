@@ -62,7 +62,7 @@ export function Sidebar({ activeTab, onTab, userName }: Props) {
   const groups = useTabGroups(t);
 
   return (
-    <aside className="w-56 flex-shrink-0 min-h-screen bg-[#0c1e3a] flex flex-col select-none">
+    <aside className="w-56 flex-shrink-0 min-h-screen bg-[#2d1b69] flex flex-col select-none">
 
       {/* Logo */}
       <div className="px-4 pt-5 pb-4 border-b border-white/10">
@@ -109,10 +109,10 @@ export function Sidebar({ activeTab, onTab, userName }: Props) {
                 >
                   <Icon className={cn(
                     "w-3.5 h-3.5 flex-shrink-0 transition-colors",
-                    isActive ? "text-cyan-400" : "text-white/40 group-hover:text-white/70"
+                    isActive ? "text-violet-400" : "text-white/40 group-hover:text-white/70"
                   )} />
                   <span className="text-[12px] font-medium flex-1">{tab.label}</span>
-                  {isActive && <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 flex-shrink-0" />}
+                  {isActive && <div className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />}
                 </button>
               );
             })}
@@ -130,14 +130,14 @@ export function Sidebar({ activeTab, onTab, userName }: Props) {
               onClick={() => setLocale(lang)}
               className={cn(
                 "text-[10px] font-bold px-2 py-0.5 rounded transition-colors uppercase",
-                locale === lang ? "bg-cyan-500/20 text-cyan-400" : "text-white/30 hover:text-white/60"
+                locale === lang ? "bg-violet-500/20 text-violet-400" : "text-white/30 hover:text-white/60"
               )}
             >{lang}</button>
           ))}
           {isForced && locale === "fr" && <span className="text-[10px] text-white/20 ml-0.5">(QC)</span>}
         </div>
         <div className="flex items-center justify-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <div className="w-1.5 h-1.5 rounded-full bg-violet-400" />
           <span className="text-[10px] text-white/30">All systems operational</span>
         </div>
       </div>

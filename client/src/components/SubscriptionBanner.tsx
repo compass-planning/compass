@@ -40,7 +40,7 @@ export function SubscriptionBanner({ onUpgrade }: Props) {
     const urgent = sub.trialDaysLeft <= 3;
     return (
       <div className={`relative flex items-center gap-3 px-4 py-2.5 text-sm ${
-        urgent ? "bg-amber-500/10 border-b border-amber-500/20 text-amber-300" : "bg-blue-500/10 border-b border-blue-500/20 text-blue-300"
+        urgent ? "bg-amber-500/10 border-b border-amber-500/20 text-amber-300" : "bg-violet-500/10 border-b border-violet-500/20 text-blue-300"
       }`}>
         <Clock className="w-4 h-4 flex-shrink-0" />
         <span className="flex-1">
@@ -53,7 +53,7 @@ export function SubscriptionBanner({ onUpgrade }: Props) {
           className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
             urgent
               ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300"
-              : "bg-blue-500/20 hover:bg-blue-500/30 text-blue-300"
+              : "bg-violet-500/20 hover:bg-violet-500/30 text-blue-300"
           }`}
         >
           <Zap className="w-3 h-3" />

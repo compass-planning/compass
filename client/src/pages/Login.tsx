@@ -46,7 +46,7 @@ function PasswordStrength({ password }: { password: string }) {
     : score <= 3
     ? { w: "60%", color: "#3b82f6", label: "Good" }
     : score <= 4
-    ? { w: "80%", color: "#06b6d4", label: "Great" }
+    ? { w: "80%", color: "#A78BFA", label: "Great" }
     : { w: "100%", color: "#10b981", label: "Strong" };
 
   return (
@@ -88,7 +88,7 @@ function Field({
         type={type} placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)} onKeyDown={onKeyDown}
         autoComplete={autoComplete}
-        className="w-full bg-white/60 backdrop-blur border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+        className="w-full bg-white/60 backdrop-blur border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all"
       />
       {suffix && (
         <div className="absolute right-3 top-1/2 -translate-y-1/2">{suffix}</div>
@@ -195,9 +195,9 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
       {/* Background mesh */}
       <div className="absolute inset-0 pointer-events-none" aria-hidden>
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600/8 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-cyan-500/8 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-blue-400/5 rounded-full blur-2xl" />
+        <div className="absolute -top-24 -left-24 w-96 h-96 bg-violet-600/8 rounded-full blur-3xl" />
+        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-violet-500/8 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-violet-400/5 rounded-full blur-2xl" />
         {/* Subtle grid */}
         <svg className="absolute inset-0 w-full h-full opacity-[0.015]" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -213,8 +213,8 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
       <div className="hidden lg:flex flex-col justify-between w-[440px] flex-shrink-0 bg-gradient-to-b from-slate-900 to-slate-800 p-12 relative overflow-hidden">
         {/* Decorative elements */}
         <div className="absolute inset-0 pointer-events-none" aria-hidden>
-          <div className="absolute top-0 right-0 w-80 h-80 bg-blue-600/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-cyan-500/15 rounded-full blur-2xl translate-y-1/3 -translate-x-1/3" />
+          <div className="absolute top-0 right-0 w-80 h-80 bg-violet-600/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-violet-500/15 rounded-full blur-2xl translate-y-1/3 -translate-x-1/3" />
           {/* Dot grid */}
           <svg className="absolute inset-0 w-full h-full opacity-[0.07]">
             <defs>
@@ -238,7 +238,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
           <h1 className="text-3xl font-bold text-white leading-tight mb-4">
             Your financial future,<br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-300 to-purple-200">
               clearly mapped.
             </span>
           </h1>
@@ -256,7 +256,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
             { label: "AI financial reports", sub: "Plain-language plan summaries" },
           ].map(f => (
             <div key={f.label} className="flex items-start gap-3">
-              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500/30 to-emerald-400/30 border border-blue-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-violet-500/30 to-purple-300/30 border border-violet-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <Check className="w-3 h-3 text-emerald-400" />
               </div>
               <div>
@@ -282,7 +282,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center mb-8">
-            <div className="bg-[#0c1e3a] rounded-2xl px-6 py-4">
+            <div className="bg-[#2d1b69] rounded-2xl px-6 py-4">
               <img
                 src="/compass-logo.svg"
                 alt="Compass Planning"
@@ -330,7 +330,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                     <select
                       value={form.province}
                       onChange={e => setForm(f => ({ ...f, province: e.target.value }))}
-                      className="w-full bg-white/60 backdrop-blur border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+                      className="w-full bg-white/60 backdrop-blur border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all"
                     >
                       <option value="">{t("auth.province")}</option>
                       <optgroup label="Canada">
@@ -379,7 +379,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                     <select
                       value={form.securityQuestion}
                       onChange={e => u("securityQuestion")(e.target.value)}
-                      className="w-full bg-white/60 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+                      className="w-full bg-white/60 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all"
                     >
                       {SECURITY_QUESTIONS.map(q => <option key={q} value={q}>{q}</option>)}
                     </select>
@@ -395,7 +395,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                 {mode === "login" && (
                   <div className="text-right">
                     <button onClick={() => { setMode("forgot-email"); reset(); }}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors">
+                      className="text-xs text-violet-600 hover:text-blue-800 font-medium transition-colors">
                       Forgot password?
                     </button>
                   </div>
@@ -411,7 +411,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                 <button
                   onClick={mode === "login" ? submitLogin : submitRegister}
                   disabled={busy || (mode === "register" && (!pwOk || !form.securityAnswer || !form.firstName || !form.email))}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 hover:from-blue-700 hover:to-cyan-600 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                 >
                   {busy
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Please wait…</>
@@ -440,7 +440,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                 </div>
               )}
               <button onClick={submitForgotEmail} disabled={busy || !forgotEmail}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-blue-500/25 transition-all disabled:opacity-50">
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
                 {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Please wait…</> : "Continue"}
               </button>
             </div>
@@ -483,7 +483,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                 </div>
               )}
               <button onClick={submitForgotAnswer} disabled={busy || !forgotAnswer || newPassword.length < 8}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-blue-500/25 transition-all disabled:opacity-50">
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
                 {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Resetting…</> : "Reset Password"}
               </button>
             </div>
@@ -500,7 +500,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                 <p className="text-sm text-slate-500">Your password has been updated. You can now sign in.</p>
               </div>
               <button onClick={() => { setMode("login"); reset(); setForgotEmail(""); setForgotAnswer(""); setNewPassword(""); }}
-                className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-blue-500/25 transition-all">
+                className="w-full bg-gradient-to-r from-violet-600 to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all">
                 Sign In
               </button>
             </div>

@@ -26,7 +26,7 @@ body {
     --popover-foreground: 222 47% 11%;
 
     /* Brand accents */
-    --primary:            217 91% 50%;     /* blue-600   primary action */
+    --primary:            217 91% 50%;     /* violet-600   primary action */
     --primary-foreground: 0 0% 100%;
     --accent:             188 86% 53%;     /* cyan-500   secondary accent */
     --accent-foreground:  222 47% 11%;
@@ -55,12 +55,12 @@ body {
 
 /* ── Brand gradient utilities (used everywhere) ───────────────────────── */
 .bg-brand-gradient {
-  background-image: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  background-image: linear-gradient(90deg, #7C3AED 0%, #A78BFA 100%);
   color: #fff;
 }
 .bg-brand-gradient:hover,
 .hover\:bg-brand-gradient-hover:hover {
-  background-image: linear-gradient(90deg, #1d4ed8 0%, #0891b2 100%);
+  background-image: linear-gradient(90deg, #6D28D9 0%, #8B5CF6 100%);
 }
 
 /* Soft tints (translucent gradient washes) */
@@ -69,7 +69,7 @@ body {
 .bg-brand-tint   { background-image: linear-gradient(90deg, rgba(37,99,235,.10), rgba(6,182,212,.10)); }
 
 .text-brand-gradient {
-  background: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  background: linear-gradient(90deg, #7C3AED 0%, #A78BFA 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -89,7 +89,7 @@ body {
   position: absolute;
   inset: 0 0 auto 0;
   height: 3px;
-  background-image: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  background-image: linear-gradient(90deg, #7C3AED 0%, #A78BFA 100%);
   border-radius: 0.75rem 0.75rem 0 0;
   z-index: 1;
 }
@@ -107,7 +107,7 @@ body {
 }
 .fp-input:focus {
   outline: none;
-  border-color: rgb(96 165 250);        /* blue-400 */
+  border-color: rgb(96 165 250);        /* violet-400 */
   box-shadow: 0 0 0 2px rgb(96 165 250 / 0.40);
 }
 .fp-input::placeholder { color: rgb(148 163 184); }
