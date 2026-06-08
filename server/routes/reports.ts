@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import { Router } from "express";
 import { db } from "../db/index.js";
-import { clients, netWorthEntries, insuranceAnalyses, debtEntries, educationSavings, retirementProjections, taxPlanningNotes, estatePlanningNotes, householdExpenses, pensionPlans } from "../../shared/schema.js";
+import { clients, netWorthEntries, insuranceAnalyses, debtEntries, educationSavings, users, retirementProjections, taxPlanningNotes, estatePlanningNotes, householdExpenses, pensionPlans } from "../../shared/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { isAuthenticated, type AuthRequest } from "../auth/index.js";
 import { generateFnaReport, generateNetWorthReport, generateComprehensiveReport, generateRetirementReport, generateInsuranceReport, generateCashFlowReport, generateAssetAllocationReport, generateRetirementReadinessReport, generateGoalStatusReport, generateInsuranceAuditReport, generateEstateSummaryReport, generateTaxStrategyReport, generateOnePagePlan } from "../services/reportGenerator.js";
