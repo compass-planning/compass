@@ -108,8 +108,11 @@ export async function getUser(id: number, jurisdiction: "CA" | "US" = "CA") {
     firstName:    users.firstName,
     lastName:     users.lastName,
     firmName:     users.firmName,
-    role:         users.role,
     jurisdiction: users.jurisdiction,
+    subscriptionTier:   users.subscriptionTier,
+    subscriptionStatus: users.subscriptionStatus,
+    trialEndsAt:        users.trialEndsAt,
+    currentPeriodEnd:   users.currentPeriodEnd,
   }).from(users).where(eq(users.id, id));
   return u ?? null;
 }

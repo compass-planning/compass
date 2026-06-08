@@ -104,6 +104,7 @@ export const clients = pgTable("clients", {
   birthYear:                   integer("birth_year"),
   createdAt:                   timestamp("created_at").defaultNow().notNull(),
   updatedAt:                   timestamp("updated_at").defaultNow().notNull(),
+  preferredLanguage:           text("preferred_language").notNull().default("en"),
 });
 
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
@@ -532,6 +533,40 @@ export const scenarioComparisons = pgTable("scenario_comparisons", {
 });
 export type ScenarioComparison     = typeof scenarioComparisons.$inferSelect;
 export type InsertScenarioComparison = typeof scenarioComparisons.$inferInsert;
+
+
+// ── LTC Analyses ──────────────────────────────────────────────────────────────
+export const ltcAnalyses = pgTable("ltc_analyses", {
+  id:        serial("id").primaryKey(),
+  clientId:  integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  planId:    integer("plan_id").references(() => financialPlans.id, { onDelete: "cascade" }),
+  data:      jsonb("data").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ── DI Analyses ───────────────────────────────────────────────────────────────
+export const diAnalyses = pgTable("di_analyses", {
+  id:        serial("id").primaryKey(),
+  clientId:  integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  planId:    integer("plan_id").references(() => financialPlans.id, { onDelete: "cascade" }),
+  data:      jsonb("data").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ── Saved Reports ─────────────────────────────────────────────────────────────
+export const savedReports = pgTable("saved_reports", {
+  id:          serial("id").primaryKey(),
+  clientId:    integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  planId:      integer("plan_id").references(() => financialPlans.id, { onDelete: "cascade" }),
+  title:       text("title").notNull(),
+  locale:      text("locale").notNull().default("en"),
+  sections:    jsonb("sections").notNull().default([]),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  updatedAt:   timestamp("updated_at").defaultNow().notNull(),
+});
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 export const adminUsers = pgTable("admin_users", {

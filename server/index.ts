@@ -82,6 +82,35 @@ async function runMigrations() {
     )`,
     `CREATE INDEX IF NOT EXISTS support_tickets_user_id_idx ON support_tickets(user_id)`,
     `CREATE INDEX IF NOT EXISTS support_tickets_status_idx  ON support_tickets(status)`,
+    // ── Missing tables ──────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS ltc_analyses (
+      id         SERIAL PRIMARY KEY,
+      client_id  INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      plan_id    INTEGER REFERENCES financial_plans(id) ON DELETE CASCADE,
+      data       JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS di_analyses (
+      id         SERIAL PRIMARY KEY,
+      client_id  INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      plan_id    INTEGER REFERENCES financial_plans(id) ON DELETE CASCADE,
+      data       JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS saved_reports (
+      id           SERIAL PRIMARY KEY,
+      client_id    INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      plan_id      INTEGER REFERENCES financial_plans(id) ON DELETE CASCADE,
+      title        TEXT NOT NULL,
+      locale       TEXT NOT NULL DEFAULT 'en',
+      sections     JSONB NOT NULL DEFAULT '[]',
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_language TEXT NOT NULL DEFAULT 'en'`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS province TEXT`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en'`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`,

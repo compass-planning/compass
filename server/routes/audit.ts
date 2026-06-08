@@ -18,11 +18,10 @@ import { isAuthenticated, type AuthRequest } from "../auth/index.js";
 const r = Router();
 r.use(isAuthenticated);
 
-// ── GA-only guard ─────────────────────────────────────────────────────────────
+// ── Auth check — any authenticated user can access their own audit log ──────
 async function requireGA(req: AuthRequest, res: Response): Promise<boolean> {
-  const [me] = await db.select({ role: users.role }).from(users).where(eq(users.id, req.userId!)).limit(1);
-  if (!me || me.role !== "ga") {
-    res.status(403).json({ message: "Audit log access requires GA role" });
+  if (!req.userId) {
+    res.status(401).json({ message: "Unauthorized" });
     return false;
   }
   return true;

@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import { Router } from "express";
 import { db } from "../db/index.js";
-import { clients, netWorthEntries, insuranceAnalyses, debtEntries, educationSavings, users, retirementProjections, taxPlanningNotes, estatePlanningNotes, householdExpenses, pensionPlans } from "../../shared/schema.js";
+import { clients, netWorthEntries, insuranceAnalyses, debtEntries, educationSavings, retirementProjections, taxPlanningNotes, estatePlanningNotes, householdExpenses, pensionPlans } from "../../shared/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { isAuthenticated, type AuthRequest } from "../auth/index.js";
 import { generateFnaReport, generateNetWorthReport, generateComprehensiveReport, generateRetirementReport, generateInsuranceReport, generateCashFlowReport, generateAssetAllocationReport, generateRetirementReadinessReport, generateGoalStatusReport, generateInsuranceAuditReport, generateEstateSummaryReport, generateTaxStrategyReport, generateOnePagePlan } from "../services/reportGenerator.js";
@@ -16,11 +16,6 @@ r.use((req: any, res: any, next: any) => {
 });
 
 async function accessibleUserIds(userId: number): Promise<number[]> {
-  const [me] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
-  if (me?.role === "ga") {
-    const fas = await db.select({ id: users.id }).from(users).where(eq(users.gaId, userId));
-    return [userId, ...fas.map(f => f.id)];
-  }
   return [userId];
 }
 
