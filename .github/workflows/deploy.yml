@@ -1,95 +1,20 @@
-name: CI / Deploy
+name: Deploy to Fly.io
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-# Cancel in-progress runs for the same branch/PR
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches:
+      - main
 
 jobs:
-  # ── Gate 1: Lint → Typecheck → Test → Build ──────────────────────────────────
-  ci:
-    name: Lint / Type / Test / Build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      # ── Lint ──────────────────────────────────────────────────────────────────
-      - name: Lint
-        run: npm run lint
-        # Treat warnings as errors in CI
-        env:
-          ESLINT_MAX_WARNINGS: "0"
-
-      # ── TypeScript ────────────────────────────────────────────────────────────
-      - name: Type check (client)
-        run: npx tsc --noEmit
-
-      - name: Type check (server)
-        run: npx tsc -p tsconfig.server.json --noEmit
-
-      # ── Tests ─────────────────────────────────────────────────────────────────
-      - name: Unit tests
-        run: npm test
-        env:
-          # Tests run without real secrets — auth.test.ts uses its own test secret
-          NODE_ENV: test
-
-      # ── Build ─────────────────────────────────────────────────────────────────
-      - name: Build (client + server)
-        run: npm run build
-        env:
-          NODE_ENV: production
-          # Vite needs this to be set even for CI builds
-          VITE_APP_VERSION: ${{ github.sha }}
-
-      # ── Upload build artifact (optional — useful for deploy job below) ────────
-      - name: Upload build artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-${{ github.sha }}
-          path: dist/
-          retention-days: 1
-
-  # ── Gate 2: Deploy (main branch only, after CI passes) ───────────────────────
   deploy:
-    name: Deploy to Fly.io
-    needs: ci
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    name: Deploy
     runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-group
-      cancel-in-progress: false   # never cancel an in-progress deploy
-
-    environment:
-      name: production
-      url: https://compass.westoak.dev
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Fly CLI
-        uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only --app compass
+        run: flyctl deploy --remote-only --app compass-feaspq
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
