@@ -189,7 +189,11 @@ app.use(httpLogger);
 // ── Item 2b: CORS — locked to configured origin ────────────────────────────────
 const allowedOrigins = [
   process.env.CLIENT_URL ?? "http://localhost:5173",
-  process.env.CUSTOM_DOMAIN,          // Item 5: CUSTOM_DOMAIN replaces any REPLIT_DOMAINS
+  process.env.CUSTOM_DOMAIN,
+  // Always allow the canonical domains
+  "https://compassplanning.app",
+  "https://www.compassplanning.app",
+  "https://compass-feaspq.fly.dev",
 ].filter(Boolean) as string[];
 
 app.use(cors({
