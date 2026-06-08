@@ -232,7 +232,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
             <img
               src="/compass-logo.svg"
               alt="Compass Planning"
-              className="w-64 object-contain brightness-0 invert"
+              className="w-64 object-contain"
             />
           </div>
 

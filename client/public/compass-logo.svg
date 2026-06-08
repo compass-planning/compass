@@ -18,10 +18,10 @@
     <polygon points="100,100 145,55 120,45" fill="url(#compassGrad)" />
     <polygon points="100,100 55,145 80,155" fill="#A3AED0" opacity="0.4" />
     <!-- Center Pivot Pin -->
-    <circle cx="100" cy="100" r="10" fill="#FFFFFF" />
+    <circle cx="100" cy="100" r="10" fill="#e9d5ff" />
     <circle cx="100" cy="100" r="5" fill="#0052FF" />
   </g>
   <!-- Typography Branding -->
-  <text x="260" y="125" font-family="'Inter', 'Montserrat', 'Segoe UI', sans-serif" font-size="52" font-weight="800" fill="#1B2559" letter-spacing="-1">COMPASS</text>
+  <text x="260" y="125" font-family="'Inter', 'Montserrat', 'Segoe UI', sans-serif" font-size="52" font-weight="800" fill="#FFFFFF" letter-spacing="-1">COMPASS</text>
   <text x="262" y="175" font-family="'Inter', 'Segoe UI', sans-serif" font-size="32" font-weight="400" fill="#00DF89" letter-spacing="6">PLANNING</text>
 </svg>

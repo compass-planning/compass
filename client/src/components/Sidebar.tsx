@@ -69,7 +69,7 @@ export function Sidebar({ activeTab, onTab, userName }: Props) {
         <img
           src="/compass-logo.svg"
           alt="Compass Planning"
-          className="w-full max-w-[150px] mx-auto block object-contain brightness-0 invert"
+          className="w-full max-w-[150px] mx-auto block object-contain"
         />
       </div>
 
