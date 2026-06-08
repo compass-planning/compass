@@ -298,14 +298,13 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                 </h2>
                 <p className="text-sm text-slate-500">
                   {mode === "login"
-                    ? "Sign in to your advisor dashboard"
-                    : "Register as a General Agent"}
+                    ? "Sign in to your Compass Planning account"
+                    : "Create your free account — no credit card required"}
                 </p>
               </div>
 
               {/* Tab switcher */}
-              {isGaPortal && (
-                <div className="flex bg-slate-100 rounded-xl p-1 mb-6">
+              <div className="flex bg-slate-100 rounded-xl p-1 mb-6">
                   {(["login", "register"] as const).map(m => (
                   <button key={m} onClick={() => { setMode(m); reset(); }}
                     className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
@@ -317,7 +316,6 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                   </button>
                 ))}
               </div>
-             )}
 
               <div className="space-y-3">
                 {mode === "register" && (
