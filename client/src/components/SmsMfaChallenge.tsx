@@ -28,11 +28,11 @@ export function SmsMfaChallenge({ mfaToken, onSuccess, onBack }: Props) {
     setSending(true);
     setError(null);
     try {
-      const res = await api.post("/auth/mfa/sms-challenge", { mfaToken });
-      setMaskedPhone(res.data.message?.replace("Code sent to ", "") ?? null);
+      const res = await api.post<any>("/api/auth/mfa/sms-challenge", { mfaToken });
+      setMaskedPhone(res.message?.replace("Code sent to ", "") ?? null);
       inputs.current[0]?.focus();
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? "Failed to send code.");
+      setError(e?.message ?? "Failed to send code.");
     } finally {
       setSending(false);
     }
@@ -60,10 +60,10 @@ export function SmsMfaChallenge({ mfaToken, onSuccess, onBack }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post("/auth/mfa/sms-complete", { mfaToken, code: c });
-      onSuccess(res.data.token, res.data.user);
+      const res = await api.post<any>("/api/auth/mfa/sms-complete", { mfaToken, code: c });
+      onSuccess(res.token, res.user);
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? "Invalid code.");
+      setError(e?.message ?? "Invalid code.");
       setCode(["", "", "", "", "", ""]);
       inputs.current[0]?.focus();
     } finally {

@@ -25,8 +25,8 @@ export function SubscriptionBanner({ onUpgrade }: Props) {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    api.get("/subscription")
-      .then(r => setSub(r.data))
+    api.get<SubStatus>("/api/subscription")
+      .then(setSub)
       .catch(() => {});
   }, []);
 

@@ -53,11 +53,11 @@ export function VerifyEmail({ email, onVerified }: Props) {
     setLoading(true);
     setError(null);
     try {
-      await api.post("/auth/mfa/verify-email", { code: c });
+      await api.post("/api/auth/mfa/verify-email", { code: c });
       setVerified(true);
       setTimeout(() => onVerified(), 1200);
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? "Invalid code. Please try again.");
+      setError(e?.message ?? "Invalid code. Please try again.");
       setCode(["", "", "", "", "", ""]);
       inputs.current[0]?.focus();
     } finally {
@@ -69,11 +69,11 @@ export function VerifyEmail({ email, onVerified }: Props) {
     setResending(true);
     setError(null);
     try {
-      await api.post("/auth/mfa/resend-verification");
+      await api.post("/api/auth/mfa/resend-verification");
       setResent(true);
       setTimeout(() => setResent(false), 4000);
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? "Failed to resend. Please try again.");
+      setError(e?.message ?? "Failed to resend. Please try again.");
     } finally {
       setResending(false);
     }

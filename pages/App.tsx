@@ -1076,8 +1076,8 @@ export default function App() {
 
   // Auto-load the user's own financial profile on boot
   useEffect(() => {
-    api.get("/auth/me/profile")
-      .then(r => setClient(r.data))
+    api.get<Client>("/api/auth/me/profile")
+      .then(setClient)
       .catch(() => {})
       .finally(() => setProfileLoading(false));
   }, [user?.id]);

@@ -147,15 +147,15 @@ export function Register({ onSuccess, onLogin }: Props) {
     }
     setLoading(true);
     try {
-      const res = await api.post("/auth/register", {
+      const res = await api.post<any>("/api/auth/register", {
         ...form,
         firmName: undefined,
         plan: selectedPlan,
       });
 
       // Store token + user
-      token.set(res.data.token);
-      login(res.data.user, res.data.token);
+      token.set(res.token);
+      login(res.user, res.token);
 
       // Paid plans: subscription activation handled manually until Stripe is live
       // For now, all new accounts start on trial regardless of plan selection
@@ -163,7 +163,7 @@ export function Register({ onSuccess, onLogin }: Props) {
 
       onSuccess?.();
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? "Registration failed. Please try again.");
+      setError(e?.message ?? "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
