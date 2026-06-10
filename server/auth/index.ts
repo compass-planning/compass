@@ -109,6 +109,8 @@ export async function getUser(id: number, jurisdiction: "CA" | "US" = "CA") {
     lastName:     users.lastName,
     firmName:     users.firmName,
     jurisdiction: users.jurisdiction,
+    emailVerified:      (users as any).emailVerified,
+    smsMfaEnabled:      (users as any).smsMfaEnabled,
     subscriptionTier:   users.subscriptionTier,
     subscriptionStatus: users.subscriptionStatus,
     trialEndsAt:        users.trialEndsAt,
