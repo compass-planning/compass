@@ -6,24 +6,12 @@ import { token, api } from "../lib/api";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const SECURITY_QUESTIONS = [
-  "What was the name of your first pet?",
-  "What city were you born in?",
-  "What is your mother's maiden name?",
-  "What was the name of your elementary school?",
-  "What was the make of your first car?",
-  "What is your oldest sibling's middle name?",
-  "What street did you grow up on?",
-  "What was your childhood nickname?",
-];
-
 type Mode = "login" | "register" | "forgot-email" | "forgot-code" | "forgot-reset" | "forgot-done";
 
 const EMPTY_FORM = {
   firstName: "", lastName: "", firmName: "", province: "",
   email: "", password: "",
-  securityQuestion: SECURITY_QUESTIONS[0],
-  securityAnswer: "",
+  phone: "",
 };
 
 // ── Password strength ─────────────────────────────────────────────────────────
@@ -380,20 +368,14 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
                 {mode === "register" && (
                   <div className="pt-3 border-t border-slate-100 space-y-2">
-                    <p className="text-xs font-semibold text-slate-500">Security Question</p>
-                    <select
-                      value={form.securityQuestion}
-                      onChange={e => u("securityQuestion")(e.target.value)}
-                      className="w-full bg-white/60 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all"
-                    >
-                      {SECURITY_QUESTIONS.map(q => <option key={q} value={q}>{q}</option>)}
-                    </select>
+                    <p className="text-xs font-semibold text-slate-500">Mobile Number <span className="font-normal text-slate-400">(optional — for SMS verification)</span></p>
                     <Field
-                      placeholder="Your answer"
-                      value={form.securityAnswer}
-                      onChange={u("securityAnswer")}
+                      type="tel"
+                      placeholder="+1 416 555 0100"
+                      value={form.phone}
+                      onChange={u("phone")}
                     />
-                    <p className="text-[10px] text-slate-400">Answer is case-insensitive and stored securely.</p>
+                    <p className="text-[10px] text-slate-400">Include country code. Used for two-factor authentication.</p>
                   </div>
                 )}
 
@@ -415,7 +397,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
                 <button
                   onClick={mode === "login" ? submitLogin : submitRegister}
-                  disabled={busy || (mode === "register" && (!pwOk || !form.securityAnswer || !form.firstName || !form.email))}
+                  disabled={busy || (mode === "register" && (!pwOk || !form.firstName || !form.email))}
                   className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 hover:from-blue-700 hover:to-cyan-600 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                 >
                   {busy

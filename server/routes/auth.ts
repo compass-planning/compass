@@ -36,7 +36,6 @@ r.post("/register", async (req: Request, res: Response) => {
     const emailVerifyExpiry = new Date(Date.now() + 15 * 60 * 1000);
 
     const province = (body as any).province ?? null;
-    const locale   = localeFromProvince(province);
 
     // 14-day trial
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
@@ -47,7 +46,7 @@ r.post("/register", async (req: Request, res: Response) => {
       firmName:  body.firmName ?? null,
       emailVerifyCode, emailVerifyExpiry, emailVerified: false,
       jurisdiction: jur,
-      province, locale,
+      province,
       subscriptionTier: "trial",
       subscriptionStatus: "trialing",
       trialEndsAt,
@@ -58,7 +57,7 @@ r.post("/register", async (req: Request, res: Response) => {
       subscriptionTier: users.subscriptionTier,
       subscriptionStatus: users.subscriptionStatus,
       trialEndsAt: users.trialEndsAt,
-      province: (users as any).province, locale: (users as any).locale,
+      province: users.province,
     });
 
     // Send verification email
@@ -118,7 +117,7 @@ r.post("/login", async (req: Request, res: Response) => {
         mustResetPassword: u.mustResetPassword,
         jurisdiction: jur,
         province: (u as any).province ?? null,
-        locale:   (u as any).locale   ?? localeFromProvince((u as any).province),
+        locale:   localeFromProvince((u as any).province),
         subscriptionTier: u.subscriptionTier,
         subscriptionStatus: u.subscriptionStatus,
         trialEndsAt: u.trialEndsAt,
