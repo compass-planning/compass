@@ -3,6 +3,8 @@ import { Router } from "express";
 import { db, getDb }    from "../db/index.js";
 import { signMfaToken } from "./mfa.js";
 import { auditAuth, AuditAction } from "../services/pipedaAuditService.js";
+import { sendVerificationEmail } from "../services/emailService.js";
+import { generateCode } from "../services/smsService.js";
 
 function localeFromProvince(province?: string | null): "en" | "fr" {
   return province?.toUpperCase() === "QC" ? "fr" : "en";
