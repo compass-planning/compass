@@ -17,7 +17,7 @@ const SECURITY_QUESTIONS = [
   "What was your childhood nickname?",
 ];
 
-type Mode = "login" | "register" | "forgot-email" | "forgot-question" | "forgot-reset" | "forgot-done" | "mfa-challenge";
+type Mode = "login" | "register" | "forgot-email" | "forgot-code" | "forgot-reset" | "forgot-done";
 
 const EMPTY_FORM = {
   firstName: "", lastName: "", firmName: "", province: "",
@@ -99,6 +99,8 @@ function Field({
 
 // ── Main Login Component ──────────────────────────────────────────────────────
 
+import { SmsMfaChallenge } from "../components/SmsMfaChallenge";
+
 export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) {
   const { login, register } = useAuth();
   const { t } = useTranslation();
@@ -110,8 +112,8 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
   const [busy, setBusy]         = useState(false);
   const [error, setError]       = useState("");
   const [forgotEmail, setForgotEmail]   = useState("");
-  const [forgotQuestion, setForgotQuestion] = useState("");
-  const [forgotAnswer, setForgotAnswer] = useState("");
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotStep, setForgotStep] = useState<"email"|"code"|"password">("email");
   const [newPassword, setNewPassword]   = useState("");
   const [showNewPw, setShowNewPw]       = useState(false);
 
@@ -128,27 +130,18 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  async function submitMfaChallenge() {
-    if (mfaCode.length !== 6) return setError("Please enter your 6-digit code.");
-    setBusy(true); setError("");
-    try {
-      const r = await fetch("/api/auth/mfa/challenge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mfaToken, code: mfaCode }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message ?? "Invalid code");
-      token.set(data.token);
-      window.location.reload();
-    } catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  }
+  // SMS MFA is handled by SmsMfaChallenge component
 
   async function submitLogin() {
     setBusy(true); setError("");
     try { await login(form.email, form.password); }
-    catch (e: any) { setError(e.message ?? "Invalid email or password"); }
+    catch (e: any) {
+      if (e.message === "MFA_REQUIRED" && e.mfaToken) {
+        setMfaToken(e.mfaToken);
+      } else {
+        setError(e.message ?? "Invalid email or password");
+      }
+    }
     finally { setBusy(false); }
   }
 
@@ -160,8 +153,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
         firstName: form.firstName, lastName: form.lastName,
         firmName: form.firmName || undefined,
         province: form.province || undefined,
-        securityQuestion: form.securityQuestion,
-        securityAnswer: form.securityAnswer,
+        phone: form.phone || undefined,
       });
     } catch (e: any) { setError(e.message ?? "Registration failed"); }
     finally { setBusy(false); }
@@ -170,10 +162,8 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
   async function submitForgotEmail() {
     setBusy(true); setError("");
     try {
-      const data = await api.post<{ question: string | null }>("/api/auth/forgot/question", { email: forgotEmail });
-      if (!data.question) return setError("No account found with that email.");
-      setForgotQuestion(data.question);
-      setMode("forgot-question");
+      await api.post("/api/auth/forgot/send", { email: forgotEmail });
+      setMode("forgot-code");
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -182,13 +172,28 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
     if (!newPassword || newPassword.length < 8) return setError("New password must be at least 12 characters.");
     setBusy(true); setError("");
     try {
-      await api.post("/api/auth/forgot/reset", { email: forgotEmail, securityAnswer: forgotAnswer, newPassword });
+      await api.post("/api/auth/forgot/reset", { email: forgotEmail, code: forgotCode, newPassword });
       setMode("forgot-done");
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
+
+  // SMS MFA challenge
+  if (mfaToken) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-[#2d1b69] to-slate-900 flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+          <SmsMfaChallenge
+            mfaToken={mfaToken}
+            onSuccess={(tok, user) => { login(user, tok); }}
+            onBack={() => setMfaToken(null)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-blue-50/30 to-cyan-50/20 relative overflow-hidden">
@@ -446,27 +451,23 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
             </div>
           )}
 
-          {/* ── Forgot — Security question ── */}
-          {mode === "forgot-question" && (
+          {/* ── Forgot — Enter code ── */}
+          {mode === "forgot-code" && (
             <div className="animate-in fade-in duration-200 space-y-4">
               <button onClick={() => { setMode("forgot-email"); reset(); }}
                 className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors">
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </button>
               <div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-1">Security Question</h2>
-                <p className="text-sm text-slate-500">Answer your security question to reset your password.</p>
+                <h2 className="text-2xl font-bold text-slate-900 mb-1">Check your email</h2>
+                <p className="text-sm text-slate-500">Enter the 6-digit code we sent to <strong>{forgotEmail}</strong> and choose a new password.</p>
               </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-                <p className="text-xs text-slate-500 mb-0.5">Your question</p>
-                <p className="text-sm font-medium text-slate-900">{forgotQuestion}</p>
-              </div>
-              <Field placeholder="Your answer" value={forgotAnswer} onChange={setForgotAnswer} />
+              <Field placeholder="6-digit code" value={forgotCode} onChange={setForgotCode} maxLength={6} />
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-slate-500">New Password</p>
                 <Field
                   type={showNewPw ? "text" : "password"}
-                  placeholder="New password (min 8 characters)"
+                  placeholder="New password (min 12 characters)"
                   value={newPassword} onChange={setNewPassword}
                   suffix={
                     <button type="button" onClick={() => setShowNewPw(s => !s)}
@@ -482,7 +483,7 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
                   <p className="text-red-600 text-sm">{error}</p>
                 </div>
               )}
-              <button onClick={submitForgotAnswer} disabled={busy || !forgotAnswer || newPassword.length < 8}
+              <button onClick={submitForgotAnswer} disabled={busy || forgotCode.length !== 6 || newPassword.length < 12}
                 className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
                 {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Resetting…</> : "Reset Password"}
               </button>

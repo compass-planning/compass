@@ -114,15 +114,6 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
-const SECURITY_QUESTIONS = [
-  "What was the name of your first pet?",
-  "What city were you born in?",
-  "What is your mother's maiden name?",
-  "What was the name of your elementary school?",
-  "What was the make of your first car?",
-  "What street did you grow up on?",
-];
-
 const PROVINCES = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"];
 
 // ── Register component ────────────────────────────────────────────────────────
@@ -144,15 +135,14 @@ export function Register({ onSuccess, onLogin }: Props) {
     firstName: "", lastName: "",
     email: "", password: "",
     province: "ON", jurisdiction: "CA",
-    securityQuestion: SECURITY_QUESTIONS[0],
-    securityAnswer: "",
+    phone: "",
   });
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   async function handleSubmit() {
     setError(null);
-    if (!form.firstName || !form.lastName || !form.email || !form.password || !form.securityAnswer) {
+    if (!form.firstName || !form.lastName || !form.email || !form.password) {
       return setError("Please fill in all required fields.");
     }
     setLoading(true);

@@ -45,10 +45,14 @@ export const users = pgTable("users", {
   jurisdiction: text("jurisdiction").notNull().default("CA"),
   mustResetPassword:  boolean("must_reset_password").default(false),
   phone:              text("phone"),
-  securityQuestion:   text("security_question"),
-  securityAnswerHash: text("security_answer_hash"),
-  totpSecret:         text("totp_secret"),
-  totpEnabled:        boolean("totp_enabled").default(false),
+  // ── Email verification ───────────────────────────────────────────────────────
+  emailVerified:      boolean("email_verified").default(false),
+  emailVerifyCode:    text("email_verify_code"),
+  emailVerifyExpiry:  timestamp("email_verify_expiry"),
+  // ── SMS MFA ───────────────────────────────────────────────────────────────────
+  smsMfaEnabled:      boolean("sms_mfa_enabled").default(false),
+  smsCode:            text("sms_code"),
+  smsCodeExpiry:      timestamp("sms_code_expiry"),
   // ── Address ──────────────────────────────────────────────────────────────
   address:            text("address"),
   city:               text("city"),

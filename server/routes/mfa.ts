@@ -1,183 +1,198 @@
 /**
  * server/routes/mfa.ts
+ * Email verification + SMS MFA — replaces TOTP and security questions.
  *
- * TOTP MFA endpoints — all require isAuthenticated except /challenge.
- *
- *   POST /api/auth/mfa/setup      — generate secret + QR code URI (not saved yet)
- *   POST /api/auth/mfa/enable     — verify first code, persist secret, mark enabled
- *   POST /api/auth/mfa/disable    — verify code, clear secret, mark disabled
- *   POST /api/auth/mfa/challenge  — verify code against temp token, return full JWT
+ * POST /api/auth/mfa/verify-email        — verify 6-digit email code
+ * POST /api/auth/mfa/resend-verification — resend verification email
+ * POST /api/auth/mfa/sms-setup           — save phone, send code
+ * POST /api/auth/mfa/sms-confirm         — verify code, enable SMS MFA
+ * POST /api/auth/mfa/sms-disable         — disable SMS MFA
+ * POST /api/auth/mfa/sms-challenge       — send SMS code on login
+ * POST /api/auth/mfa/sms-complete        — verify code, return full JWT
  */
-import type { Response } from "express";
-import { Router }        from "express";
-import speakeasy         from "speakeasy";
-import QRCode            from "qrcode";
-import { z }             from "zod";
-import jwt               from "jsonwebtoken";
-import { db }            from "../db/index.js";
-import { users }         from "../../shared/schema.js";
-import { eq }            from "drizzle-orm";
+
+import { Router, type Response } from "express";
+import jwt from "jsonwebtoken";
+import { z } from "zod";
+import { getDb } from "../db/index.js";
+import { users } from "../../shared/schema.js";
+import { eq } from "drizzle-orm";
 import { isAuthenticated, signToken, type AuthRequest } from "../auth/index.js";
-import { logger }        from "../logger.js";
+import { sendVerificationEmail } from "../services/emailService.js";
+import { sendSmsCode, generateCode } from "../services/smsService.js";
 
 const r = Router();
+const SECRET  = process.env.JWT_SECRET ?? "change-me-in-env";
+const MFA_TTL = 10 * 60;
 
-const SECRET     = process.env.JWT_SECRET ?? "change-me-in-env";
-const MFA_TTL    = 5 * 60;        // 5 minutes for the pending MFA token
-const APP_NAME   = "Compass Planning";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Sign a short-lived token indicating MFA verification is pending. */
-function signMfaToken(userId: number, jurisdiction: "CA" | "US"): string {
-  return jwt.sign(
-    { sub: userId, jur: jurisdiction, mfa_pending: true },
-    SECRET,
-    { expiresIn: MFA_TTL },
-  );
+export function signMfaToken(userId: number, jurisdiction: "CA" | "US"): string {
+  return jwt.sign({ sub: userId, jur: jurisdiction, mfa_pending: true }, SECRET, { expiresIn: MFA_TTL });
 }
 
-/** Verify a TOTP code against a base32 secret. */
-function verifyTotp(secret: string, code: string): boolean {
-  return speakeasy.totp.verify({
-    secret,
-    encoding: "base32",
-    token:    code.replace(/\s/g, ""),
-    window:   1,   // allow 1 step drift (30s before/after)
-  });
+function verifyMfaToken(token: string): { userId: number; jurisdiction: "CA" | "US" } | null {
+  try {
+    const p = jwt.verify(token, SECRET) as any;
+    if (!p.mfa_pending) return null;
+    return { userId: +p.sub, jurisdiction: p.jur ?? "CA" };
+  } catch { return null; }
 }
 
-// ── POST /api/auth/mfa/setup ─────────────────────────────────────────────────
-// Returns a new TOTP secret + QR code data URL. Does NOT save yet.
-r.post("/setup", isAuthenticated, async (req: AuthRequest, res: Response) => {
-  try {
-    const [u] = await db.select({ email: users.email, totpEnabled: users.totpEnabled })
-      .from(users).where(eq(users.id, req.userId!)).limit(1);
+function codeExpiry(minutes = 15): Date {
+  return new Date(Date.now() + minutes * 60 * 1000);
+}
 
-    if (!u) return res.status(404).json({ message: "User not found" });
-    if (u.totpEnabled) return res.status(400).json({ message: "MFA is already enabled" });
-
-    const secret = speakeasy.generateSecret({
-      name:   `${APP_NAME} (${u.email})`,
-      length: 20,
-    });
-
-    const otpauthUrl = secret.otpauth_url!;
-    const qrCode     = await QRCode.toDataURL(otpauthUrl);
-
-    res.json({
-      secret:  secret.base32,
-      qrCode,             // data:image/png;base64,...
-      otpauthUrl,
-    });
-  } catch (err) {
-    logger.error({ err, userId: req.userId }, "mfa setup error");
-    res.status(500).json({ message: "Failed to generate MFA secret" });
-  }
-});
-
-// ── POST /api/auth/mfa/enable ────────────────────────────────────────────────
-// Verify first TOTP code against provided secret, then persist and enable.
-r.post("/enable", isAuthenticated, async (req: AuthRequest, res: Response) => {
-  try {
-    const { secret, code } = z.object({
-      secret: z.string().min(16),
-      code:   z.string().length(6),
-    }).parse(req.body);
-
-    if (!verifyTotp(secret, code)) {
-      return res.status(401).json({ message: "Invalid verification code. Please try again." });
-    }
-
-    await db.update(users)
-      .set({ totpSecret: secret, totpEnabled: true })
-      .where(eq(users.id, req.userId!));
-
-    logger.info({ userId: req.userId }, "MFA enabled");
-    res.json({ message: "MFA enabled successfully" });
-  } catch (err: any) {
-    if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message });
-    logger.error({ err, userId: req.userId }, "mfa enable error");
-    res.status(500).json({ message: "Failed to enable MFA" });
-  }
-});
-
-// ── POST /api/auth/mfa/disable ───────────────────────────────────────────────
-// Verify current TOTP code, then clear MFA.
-r.post("/disable", isAuthenticated, async (req: AuthRequest, res: Response) => {
+// ── POST /verify-email ────────────────────────────────────────────────────────
+r.post("/verify-email", isAuthenticated, async (req: AuthRequest, res: Response) => {
   try {
     const { code } = z.object({ code: z.string().length(6) }).parse(req.body);
-
-    const [u] = await db.select({ totpSecret: users.totpSecret, totpEnabled: users.totpEnabled })
-      .from(users).where(eq(users.id, req.userId!)).limit(1);
-
-    if (!u?.totpEnabled || !u.totpSecret) {
-      return res.status(400).json({ message: "MFA is not enabled" });
-    }
-    if (!verifyTotp(u.totpSecret, code)) {
-      return res.status(401).json({ message: "Invalid code" });
-    }
-
-    await db.update(users)
-      .set({ totpSecret: null, totpEnabled: false })
-      .where(eq(users.id, req.userId!));
-
-    logger.info({ userId: req.userId }, "MFA disabled");
-    res.json({ message: "MFA disabled" });
-  } catch (err: any) {
-    if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message });
-    logger.error({ err, userId: req.userId }, "mfa disable error");
-    res.status(500).json({ message: "Failed to disable MFA" });
+    const jur = req.userJurisdiction ?? "CA";
+    const [u] = await getDb(jur).select({
+      id: users.id,
+      emailVerifyCode:   (users as any).emailVerifyCode,
+      emailVerifyExpiry: (users as any).emailVerifyExpiry,
+      emailVerified:     (users as any).emailVerified,
+    }).from(users).where(eq(users.id, req.userId!)).limit(1);
+    if (!u) return res.status(404).json({ message: "User not found" });
+    if (u.emailVerified) return res.json({ message: "Email already verified" });
+    if (!u.emailVerifyCode || u.emailVerifyCode !== code)
+      return res.status(400).json({ message: "Invalid verification code" });
+    if (u.emailVerifyExpiry && new Date(u.emailVerifyExpiry) < new Date())
+      return res.status(400).json({ message: "Code expired. Please request a new one." });
+    await getDb(jur).update(users).set({
+      emailVerified: true, emailVerifyCode: null, emailVerifyExpiry: null,
+    } as any).where(eq(users.id, req.userId!));
+    res.json({ message: "Email verified successfully" });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid code format" });
+    res.status(500).json({ message: e.message });
   }
 });
 
-// ── POST /api/auth/mfa/challenge ─────────────────────────────────────────────
-// Verify TOTP code against temp token. Returns full JWT if valid.
-// No isAuthenticated middleware — user only has a temp mfaToken at this point.
-r.post("/challenge", async (req: any, res: Response) => {
+// ── POST /resend-verification ─────────────────────────────────────────────────
+r.post("/resend-verification", isAuthenticated, async (req: AuthRequest, res: Response) => {
+  try {
+    const jur = req.userJurisdiction ?? "CA";
+    const [u] = await getDb(jur).select({
+      id: users.id, email: users.email, firstName: users.firstName,
+      emailVerified: (users as any).emailVerified,
+    }).from(users).where(eq(users.id, req.userId!)).limit(1);
+    if (!u) return res.status(404).json({ message: "User not found" });
+    if (u.emailVerified) return res.json({ message: "Email already verified" });
+    const code = generateCode();
+    await getDb(jur).update(users).set({
+      emailVerifyCode: code, emailVerifyExpiry: codeExpiry(15),
+    } as any).where(eq(users.id, req.userId!));
+    await sendVerificationEmail(u.email, code, u.firstName);
+    res.json({ message: "Verification email sent" });
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+// ── POST /sms-setup ───────────────────────────────────────────────────────────
+r.post("/sms-setup", isAuthenticated, async (req: AuthRequest, res: Response) => {
+  try {
+    const { phone } = z.object({ phone: z.string().min(10).max(20) }).parse(req.body);
+    const code = generateCode();
+    const jur  = req.userJurisdiction ?? "CA";
+    await getDb(jur).update(users).set({
+      phone, smsCode: code, smsCodeExpiry: codeExpiry(10),
+    } as any).where(eq(users.id, req.userId!));
+    await sendSmsCode(phone, code);
+    res.json({ message: "SMS code sent. Enter it to confirm your number." });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ── POST /sms-confirm ─────────────────────────────────────────────────────────
+r.post("/sms-confirm", isAuthenticated, async (req: AuthRequest, res: Response) => {
+  try {
+    const { code } = z.object({ code: z.string().length(6) }).parse(req.body);
+    const jur = req.userJurisdiction ?? "CA";
+    const [u] = await getDb(jur).select({
+      id: users.id,
+      smsCode: (users as any).smsCode,
+      smsCodeExpiry: (users as any).smsCodeExpiry,
+    }).from(users).where(eq(users.id, req.userId!)).limit(1);
+    if (!u) return res.status(404).json({ message: "User not found" });
+    if (!u.smsCode || u.smsCode !== code)
+      return res.status(400).json({ message: "Invalid code" });
+    if (u.smsCodeExpiry && new Date(u.smsCodeExpiry) < new Date())
+      return res.status(400).json({ message: "Code expired. Please restart setup." });
+    await getDb(jur).update(users).set({
+      smsMfaEnabled: true, smsCode: null, smsCodeExpiry: null,
+    } as any).where(eq(users.id, req.userId!));
+    res.json({ message: "SMS MFA enabled successfully" });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: "Invalid code format" });
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ── POST /sms-disable ─────────────────────────────────────────────────────────
+r.post("/sms-disable", isAuthenticated, async (req: AuthRequest, res: Response) => {
+  try {
+    const jur = req.userJurisdiction ?? "CA";
+    await getDb(jur).update(users).set({
+      smsMfaEnabled: false, smsCode: null, smsCodeExpiry: null,
+    } as any).where(eq(users.id, req.userId!));
+    res.json({ message: "SMS MFA disabled" });
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+// ── POST /sms-challenge — send code after password login ──────────────────────
+r.post("/sms-challenge", async (req: any, res: Response) => {
+  try {
+    const { mfaToken } = z.object({ mfaToken: z.string() }).parse(req.body);
+    const payload = verifyMfaToken(mfaToken);
+    if (!payload) return res.status(401).json({ message: "Invalid or expired MFA token" });
+    const [u] = await getDb(payload.jurisdiction).select({
+      id: users.id, phone: users.phone,
+      smsMfaEnabled: (users as any).smsMfaEnabled,
+    }).from(users).where(eq(users.id, payload.userId)).limit(1);
+    if (!u?.smsMfaEnabled || !u.phone)
+      return res.status(400).json({ message: "SMS MFA not configured" });
+    const code = generateCode();
+    await getDb(payload.jurisdiction).update(users).set({
+      smsCode: code, smsCodeExpiry: codeExpiry(10),
+    } as any).where(eq(users.id, payload.userId));
+    await sendSmsCode(u.phone, code);
+    const masked = u.phone.slice(0, -4).replace(/\d/g, "•") + u.phone.slice(-4);
+    res.json({ message: `Code sent to ${masked}`, mfaToken });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ── POST /sms-complete — verify code, return full JWT ─────────────────────────
+r.post("/sms-complete", async (req: any, res: Response) => {
   try {
     const { mfaToken, code } = z.object({
-      mfaToken: z.string().min(1),
-      code:     z.string().length(6),
+      mfaToken: z.string(), code: z.string().length(6),
     }).parse(req.body);
-
-    // Verify the pending MFA token
-    let payload: any;
-    try {
-      payload = jwt.verify(mfaToken, SECRET);
-    } catch {
-      return res.status(401).json({ message: "MFA session expired. Please sign in again." });
-    }
-
-    if (!payload.mfa_pending) {
-      return res.status(401).json({ message: "Invalid MFA token" });
-    }
-
-    const userId = +payload.sub;
-    const jur    = payload.jur === "US" ? "US" : "CA" as "CA" | "US";
-
-    // Get user's TOTP secret
-    const [u] = await db.select({ totpSecret: users.totpSecret, totpEnabled: users.totpEnabled })
-      .from(users).where(eq(users.id, userId)).limit(1);
-
-    if (!u?.totpEnabled || !u.totpSecret) {
-      return res.status(401).json({ message: "MFA not configured for this account" });
-    }
-
-    if (!verifyTotp(u.totpSecret, code)) {
-      logger.warn({ userId }, "MFA challenge failed — invalid code");
-      return res.status(401).json({ message: "Invalid code. Please try again." });
-    }
-
-    // Issue full session token
-    const token = signToken(userId, jur);
-    logger.info({ userId }, "MFA challenge passed — session issued");
-    res.json({ token, jurisdiction: jur });
-  } catch (err: any) {
-    if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message });
-    logger.error({ err }, "mfa challenge error");
-    res.status(500).json({ message: "MFA challenge failed" });
+    const payload = verifyMfaToken(mfaToken);
+    if (!payload) return res.status(401).json({ message: "Invalid or expired MFA token" });
+    const [u] = await getDb(payload.jurisdiction).select({
+      id: users.id, email: users.email, firstName: users.firstName, lastName: users.lastName,
+      smsCode: (users as any).smsCode, smsCodeExpiry: (users as any).smsCodeExpiry,
+    }).from(users).where(eq(users.id, payload.userId)).limit(1);
+    if (!u) return res.status(404).json({ message: "User not found" });
+    if (!u.smsCode || u.smsCode !== code)
+      return res.status(400).json({ message: "Invalid code" });
+    if (u.smsCodeExpiry && new Date(u.smsCodeExpiry) < new Date())
+      return res.status(400).json({ message: "Code expired. Please sign in again." });
+    await getDb(payload.jurisdiction).update(users).set({
+      smsCode: null, smsCodeExpiry: null,
+    } as any).where(eq(users.id, payload.userId));
+    res.json({
+      token: signToken(u.id, payload.jurisdiction),
+      user: { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName },
+    });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
+    res.status(500).json({ message: e.message });
   }
 });
 
-export { r as mfaRouter, signMfaToken };
+export { r as mfaRouter };

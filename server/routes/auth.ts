@@ -29,13 +29,9 @@ r.post("/register", async (req: Request, res: Response) => {
     const exists = await target.select({ id: users.id }).from(users).where(eq(users.email, body.email)).limit(1);
     if (exists.length) return res.status(409).json({ message: "Email already registered" });
 
-    const { securityQuestion, securityAnswer } = z.object({
-      securityQuestion: z.string().min(1, "Security question is required"),
-      securityAnswer:   z.string().min(1, "Security answer is required"),
-    }).parse(req.body);
-
-    const hash       = await hashPassword(body.password);
-    const answerHash = await hashPassword(securityAnswer.toLowerCase().trim());
+    const hash = await hashPassword(body.password);
+    const emailVerifyCode = generateCode();
+    const emailVerifyExpiry = new Date(Date.now() + 15 * 60 * 1000);
 
     const province = (body as any).province ?? null;
     const locale   = localeFromProvince(province);
@@ -47,7 +43,7 @@ r.post("/register", async (req: Request, res: Response) => {
       email: body.email, passwordHash: hash,
       firstName: body.firstName, lastName: body.lastName,
       firmName:  body.firmName ?? null,
-      securityQuestion, securityAnswerHash: answerHash,
+      emailVerifyCode, emailVerifyExpiry, emailVerified: false,
       jurisdiction: jur,
       province, locale,
       subscriptionTier: "trial",
@@ -62,6 +58,14 @@ r.post("/register", async (req: Request, res: Response) => {
       trialEndsAt: users.trialEndsAt,
       province: (users as any).province, locale: (users as any).locale,
     });
+
+    // Send verification email
+    try {
+      await sendVerificationEmail(u.email, emailVerifyCode, u.firstName);
+    } catch (emailErr: any) {
+      console.error("[register] email send failed:", emailErr.message);
+      // Don't fail registration if email fails
+    }
 
     // Auto-create the user's personal financial profile record
     await (target.insert(clients) as any).values({
@@ -98,7 +102,7 @@ r.post("/login", async (req: Request, res: Response) => {
 
     const jur = (u.jurisdiction ?? "CA") as "CA" | "US";
 
-    if (u.totpEnabled) {
+    if ((u as any).smsMfaEnabled) {
       await auditAuth({ req, action: AuditAction.AUTH_LOGIN_SUCCESS, userId: u.id, userEmail: u.email });
       return res.json({ mfaRequired: true, mfaToken: signMfaToken(u.id, jur) });
     }
@@ -117,6 +121,7 @@ r.post("/login", async (req: Request, res: Response) => {
         subscriptionStatus: u.subscriptionStatus,
         trialEndsAt: u.trialEndsAt,
         currentPeriodEnd: u.currentPeriodEnd,
+        emailVerified: (u as any).emailVerified ?? false,
       },
     });
   } catch (e: any) {
@@ -206,25 +211,38 @@ r.post("/force-reset-password", isAuthenticated, async (req: AuthRequest, res: R
   }
 });
 
-// ── Forgot Password: get security question ────────────────────────────────────
-r.post("/forgot/question", async (req: Request, res: Response) => {
+// ── Forgot Password: send email code ─────────────────────────────────────────
+r.post("/forgot/send", async (req: Request, res: Response) => {
   try {
     const { email } = z.object({ email: z.string().email() }).parse(req.body);
-    let [u] = await getDb("CA").select({ securityQuestion: users.securityQuestion }).from(users).where(eq(users.email, email)).limit(1);
-    if (!u) [u] = await getDb("US").select({ securityQuestion: users.securityQuestion }).from(users).where(eq(users.email, email)).limit(1);
-    res.json({ question: u?.securityQuestion ?? null });
+    let jur: "CA" | "US" = "CA";
+    let [u] = await getDb("CA").select({ id: users.id, email: users.email, firstName: users.firstName }).from(users).where(eq(users.email, email)).limit(1);
+    if (!u) {
+      [u] = await getDb("US").select({ id: users.id, email: users.email, firstName: users.firstName }).from(users).where(eq(users.email, email)).limit(1);
+      if (u) jur = "US";
+    }
+    // Always return success to prevent email enumeration
+    if (u) {
+      const code = generateCode();
+      await getDb(jur).update(users).set({
+        emailVerifyCode: code,
+        emailVerifyExpiry: new Date(Date.now() + 15 * 60 * 1000),
+      } as any).where(eq(users.id, u.id));
+      try { await sendVerificationEmail(u.email, code, u.firstName); } catch {}
+    }
+    res.json({ message: "If that email exists, a reset code has been sent." });
   } catch (e: any) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── Forgot Password: verify answer + reset ────────────────────────────────────
+// ── Forgot Password: verify code + reset ─────────────────────────────────────
 r.post("/forgot/reset", async (req: Request, res: Response) => {
   try {
-    const { email, securityAnswer, newPassword } = z.object({
-      email:          z.string().email(),
-      securityAnswer: z.string().min(1),
-      newPassword:    z.string().min(12),
+    const { email, code, newPassword } = z.object({
+      email:       z.string().email(),
+      code:        z.string().length(6),
+      newPassword: z.string().min(12),
     }).parse(req.body);
 
     let jur: "CA" | "US" = "CA";
@@ -233,19 +251,22 @@ r.post("/forgot/reset", async (req: Request, res: Response) => {
       [u] = await getDb("US").select().from(users).where(eq(users.email, email)).limit(1);
       if (u) jur = "US";
     }
+    if (!u) return res.status(400).json({ message: "Account not found." });
 
-    if (!u || !u.securityAnswerHash)
-      return res.status(400).json({ message: "Account not found or no security question set." });
-
-    const correct = await checkPassword(securityAnswer.toLowerCase().trim(), u.securityAnswerHash);
-    if (!correct) return res.status(401).json({ message: "Security answer is incorrect." });
+    const verifyCode = (u as any).emailVerifyCode;
+    const expiry     = (u as any).emailVerifyExpiry;
+    if (!verifyCode || verifyCode !== code)
+      return res.status(400).json({ message: "Invalid code." });
+    if (expiry && new Date(expiry) < new Date())
+      return res.status(400).json({ message: "Code expired. Please request a new one." });
 
     const hash = await hashPassword(newPassword);
-    await getDb(jur).update(users).set({ passwordHash: hash }).where(eq(users.id, u.id));
+    await getDb(jur).update(users).set({
+      passwordHash: hash, emailVerifyCode: null, emailVerifyExpiry: null,
+    } as any).where(eq(users.id, u.id));
     res.json({ message: "Password reset successfully. You can now sign in." });
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message ?? "Validation error" });
-    console.error("[forgot/reset]", e.message);
     res.status(500).json({ message: e.message ?? "Server error" });
   }
 });
