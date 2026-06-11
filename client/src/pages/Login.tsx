@@ -1,56 +1,49 @@
-import { useState, useCallback } from "react";
-import { useAuth } from "../lib/auth";
-import { Eye, EyeOff, Check, X, ArrowLeft, Loader2 } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import { token, api } from "../lib/api";
+/**
+ * Login.tsx
+ * Firebase-powered auth UI — sign in, register, forgot password.
+ * Firebase handles email verification automatically.
+ */
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+import { useState } from "react";
+import { Eye, EyeOff, Loader2, ArrowLeft, Check, X } from "lucide-react";
+import {
+  auth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+} from "../lib/firebase";
+import { api } from "../lib/api";
 
-type Mode = "login" | "register" | "forgot-email" | "forgot-code" | "forgot-reset" | "forgot-done";
+type Mode = "login" | "register" | "forgot" | "forgot-sent";
 
-const EMPTY_FORM = {
-  firstName: "", lastName: "", firmName: "", province: "",
-  email: "", password: "",
-};
-
-// ── Password strength ─────────────────────────────────────────────────────────
-
+// ── Password strength ──────────────────────────────────────────────────────────
 function PasswordStrength({ password }: { password: string }) {
   const rules = [
-    { label: "8+ characters",          ok: password.length >= 8 },
-    { label: "Uppercase letter",        ok: /[A-Z]/.test(password) },
-    { label: "Lowercase letter",        ok: /[a-z]/.test(password) },
-    { label: "Number",                  ok: /\d/.test(password) },
-    { label: "Special character",       ok: /[^A-Za-z0-9]/.test(password) },
+    { label: "8+ characters",    ok: password.length >= 8 },
+    { label: "Uppercase letter", ok: /[A-Z]/.test(password) },
+    { label: "Lowercase letter", ok: /[a-z]/.test(password) },
+    { label: "Number",           ok: /\d/.test(password) },
+    { label: "Special char",     ok: /[^A-Za-z0-9]/.test(password) },
   ];
   const score = rules.filter(r => r.ok).length;
   if (!password) return null;
-
-  const bar = score <= 1
-    ? { w: "20%", color: "#ef4444", label: "Weak" }
-    : score <= 2
-    ? { w: "40%", color: "#f59e0b", label: "Fair" }
-    : score <= 3
-    ? { w: "60%", color: "#3b82f6", label: "Good" }
-    : score <= 4
-    ? { w: "80%", color: "#A78BFA", label: "Great" }
-    : { w: "100%", color: "#10b981", label: "Strong" };
-
+  const bar = score <= 1 ? { w: "20%", c: "#ef4444", l: "Weak" }
+    : score <= 3 ? { w: `${score * 20}%`, c: "#f59e0b", l: "Fair" }
+    : score <= 4 ? { w: "80%", c: "#8b5cf6", l: "Good" }
+    : { w: "100%", c: "#10b981", l: "Strong" };
   return (
-    <div className="space-y-2 pt-1">
+    <div className="space-y-1.5 pt-1">
       <div className="flex items-center gap-2">
         <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all duration-500"
-            style={{ width: bar.w, backgroundColor: bar.color }} />
+          <div className="h-full rounded-full transition-all duration-500" style={{ width: bar.w, backgroundColor: bar.c }} />
         </div>
-        <span className="text-xs font-semibold" style={{ color: bar.color }}>{bar.label}</span>
+        <span className="text-xs font-semibold" style={{ color: bar.c }}>{bar.l}</span>
       </div>
       <div className="grid grid-cols-2 gap-0.5">
         {rules.map(r => (
           <div key={r.label} className="flex items-center gap-1">
-            {r.ok
-              ? <Check className="w-2.5 h-2.5 text-emerald-500 flex-shrink-0" />
-              : <X    className="w-2.5 h-2.5 text-slate-300 flex-shrink-0" />}
+            {r.ok ? <Check className="w-2.5 h-2.5 text-emerald-500 flex-shrink-0" /> : <X className="w-2.5 h-2.5 text-slate-300 flex-shrink-0" />}
             <span className={`text-[10px] ${r.ok ? "text-emerald-600" : "text-slate-400"}`}>{r.label}</span>
           </div>
         ))}
@@ -59,174 +52,90 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
-// ── Input component ───────────────────────────────────────────────────────────
+const PROVINCES = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"];
 
-function Field({
-  type = "text", placeholder, value, onChange, onKeyDown,
-  autoComplete = "off", suffix,
-}: {
-  type?: string; placeholder: string; value: string;
-  onChange: (v: string) => void; onKeyDown?: (e: React.KeyboardEvent) => void;
-  autoComplete?: string; suffix?: React.ReactNode;
-}) {
-  return (
-    <div className="relative">
-      <input
-        type={type} placeholder={placeholder} value={value}
-        onChange={e => onChange(e.target.value)} onKeyDown={onKeyDown}
-        autoComplete={autoComplete}
-        className="w-full bg-white/60 backdrop-blur border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all"
-      />
-      {suffix && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2">{suffix}</div>
-      )}
-    </div>
-  );
-}
-
-// ── Main Login Component ──────────────────────────────────────────────────────
-
-import { SmsMfaChallenge } from "../components/SmsMfaChallenge";
-
-export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) {
-  const { login, register } = useAuth();
-  const { t } = useTranslation();
+export default function Login() {
   const [mode, setMode]         = useState<Mode>("login");
-  const [mfaToken, setMfaToken]  = useState<string | null>(null);
-  const [mfaCode, setMfaCode]    = useState("");
-  const [form, setForm]         = useState({ ...EMPTY_FORM });
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName]   = useState("");
+  const [firmName, setFirmName]   = useState("");
+  const [province, setProvince]   = useState("ON");
+  const [jurisdiction, setJurisdiction] = useState<"CA"|"US">("CA");
   const [showPw, setShowPw]     = useState(false);
   const [busy, setBusy]         = useState(false);
   const [error, setError]       = useState("");
-  const [forgotEmail, setForgotEmail]   = useState("");
-  const [forgotCode, setForgotCode] = useState("");
-  const [forgotStep, setForgotStep] = useState<"email"|"code"|"password">("email");
-  const [newPassword, setNewPassword]   = useState("");
-  const [showNewPw, setShowNewPw]       = useState(false);
+  const [success, setSuccess]   = useState("");
 
-  const u = (k: keyof typeof form) => (v: string) => setForm(f => ({ ...f, [k]: v }));
-  const reset = useCallback(() => { setError(""); setBusy(false); }, []);
+  function reset() { setError(""); setSuccess(""); }
 
-  const pwOk = [
-    form.password.length >= 8,
-    /[A-Z]/.test(form.password),
-    /[a-z]/.test(form.password),
-    /\d/.test(form.password),
-    /[^A-Za-z0-9]/.test(form.password),
-  ].filter(Boolean).length >= 4;
-
-  // ── Handlers ────────────────────────────────────────────────────────────────
-
-  // SMS MFA is handled by SmsMfaChallenge component
-
-  async function submitLogin() {
-    setBusy(true); setError("");
-    try { await login(form.email, form.password); }
-    catch (e: any) {
-      if (e.message === "MFA_REQUIRED" && e.mfaToken) {
-        setMfaToken(e.mfaToken);
-      } else {
-        setError(e.message ?? "Invalid email or password");
-      }
-    }
-    finally { setBusy(false); }
+  async function handleLogin() {
+    setBusy(true); reset();
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged in AuthProvider handles the rest
+    } catch (e: any) {
+      const msg = e.code === "auth/invalid-credential" ? "Invalid email or password"
+        : e.code === "auth/too-many-requests" ? "Too many attempts. Try again later."
+        : e.message;
+      setError(msg);
+    } finally { setBusy(false); }
   }
 
-  async function submitRegister() {
-    setBusy(true); setError("");
+  async function handleRegister() {
+    if (!firstName || !lastName || !email || !password)
+      return setError("Please fill in all required fields.");
+    setBusy(true); reset();
     try {
-      await register({
-        email: form.email, password: form.password,
-        firstName: form.firstName, lastName: form.lastName,
-        firmName: form.firmName || undefined,
-        province: form.province || undefined,
+      // 1. Create Firebase user
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+
+      // 2. Send verification email
+      await sendEmailVerification(cred.user);
+
+      // 3. Get ID token and create our Postgres record
+      const idToken = await cred.user.getIdToken();
+      await api.post("/api/auth/register", {
+        idToken, firstName, lastName, firmName: firmName || undefined,
+        jurisdiction, province,
       });
-    } catch (e: any) { setError(e.message ?? "Registration failed"); }
-    finally { setBusy(false); }
+
+      // AuthProvider picks up the Firebase auth state automatically
+    } catch (e: any) {
+      const msg = e.code === "auth/email-already-in-use" ? "An account with this email already exists."
+        : e.code === "auth/weak-password" ? "Password must be at least 6 characters."
+        : e.message;
+      setError(msg);
+    } finally { setBusy(false); }
   }
 
-  async function submitForgotEmail() {
-    setBusy(true); setError("");
+  async function handleForgot() {
+    if (!email) return setError("Enter your email address.");
+    setBusy(true); reset();
     try {
-      await api.post("/api/auth/forgot/send", { email: forgotEmail });
-      setMode("forgot-code");
-    } catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  }
-
-  async function submitForgotAnswer() {
-    if (!newPassword || newPassword.length < 8) return setError("New password must be at least 12 characters.");
-    setBusy(true); setError("");
-    try {
-      await api.post("/api/auth/forgot/reset", { email: forgotEmail, code: forgotCode, newPassword });
-      setMode("forgot-done");
-    } catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  }
-
-  // ── Render ───────────────────────────────────────────────────────────────────
-
-  // SMS MFA challenge
-  if (mfaToken) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-[#2d1b69] to-slate-900 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
-          <SmsMfaChallenge
-            mfaToken={mfaToken}
-            onSuccess={(tok, user) => { login(user, tok); }}
-            onBack={() => setMfaToken(null)}
-          />
-        </div>
-      </div>
-    );
+      await sendPasswordResetEmail(auth, email);
+      setMode("forgot-sent");
+    } catch (e: any) {
+      // Don't reveal if email exists
+      setMode("forgot-sent");
+    } finally { setBusy(false); }
   }
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-blue-50/30 to-cyan-50/20 relative overflow-hidden">
+    <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-violet-50/30 to-purple-50/20 relative overflow-hidden">
 
-      {/* Background mesh */}
-      <div className="absolute inset-0 pointer-events-none" aria-hidden>
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-violet-600/8 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-violet-500/8 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-violet-400/5 rounded-full blur-2xl" />
-        {/* Subtle grid */}
-        <svg className="absolute inset-0 w-full h-full opacity-[0.015]" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-              <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#1e293b" strokeWidth="0.5"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
-      </div>
-
-      {/* Left panel — branding (desktop only) */}
-      <div className="hidden lg:flex flex-col justify-between w-[440px] flex-shrink-0 bg-gradient-to-b from-slate-900 to-slate-800 p-12 relative overflow-hidden">
-        {/* Decorative elements */}
-        <div className="absolute inset-0 pointer-events-none" aria-hidden>
-          <div className="absolute top-0 right-0 w-80 h-80 bg-violet-600/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-violet-500/15 rounded-full blur-2xl translate-y-1/3 -translate-x-1/3" />
-          {/* Dot grid */}
-          <svg className="absolute inset-0 w-full h-full opacity-[0.07]">
-            <defs>
-              <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
-                <circle cx="1" cy="1" r="1" fill="white"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#dots)" />
-          </svg>
+      {/* Left panel — branding */}
+      <div className="hidden lg:flex lg:w-[420px] xl:w-[480px] flex-col justify-between p-10 relative overflow-hidden bg-gradient-to-br from-[#2d1b69] via-[#3b2080] to-[#4c1d95]">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-white/5 rounded-full blur-3xl" />
+          <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-white/5 rounded-full blur-3xl" />
         </div>
 
-        {/* Top — logo & wordmark */}
         <div className="relative z-10">
           <div className="mb-10">
-            <img
-              src="/compass-logo.svg"
-              alt="Compass Planning"
-              className="w-64 object-contain"
-            />
+            <img src="/compass-logo.svg" alt="Compass Planning" className="w-64 object-contain" />
           </div>
-
           <h1 className="text-3xl font-bold text-white leading-tight mb-4">
             Your financial future,<br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-300 to-purple-200">
@@ -238,17 +147,16 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
           </p>
         </div>
 
-        {/* Features list */}
         <div className="relative z-10 space-y-3">
           {[
             { label: "Retirement projections", sub: "Monte Carlo + guardrails engine" },
-            { label: "Tax optimization", sub: "Canada & United States" },
-            { label: "Net worth & goals", sub: "Full balance sheet tracking" },
-            { label: "AI financial reports", sub: "Plain-language plan summaries" },
+            { label: "Tax optimization",       sub: "Canada & United States" },
+            { label: "Net worth & goals",      sub: "Full balance sheet tracking" },
+            { label: "AI financial reports",   sub: "Plain-language plan summaries" },
           ].map(f => (
             <div key={f.label} className="flex items-start gap-3">
-              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-violet-500/30 to-purple-300/30 border border-violet-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <Check className="w-3 h-3 text-emerald-400" />
+              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-violet-500/30 to-purple-400/30 border border-violet-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Check className="w-3 h-3 text-violet-300" />
               </div>
               <div>
                 <p className="text-white/80 text-sm font-medium leading-none">{f.label}</p>
@@ -257,227 +165,172 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
             </div>
           ))}
         </div>
-
-        {/* Bottom */}
-        <div className="relative z-10">
-          <div className="flex items-center gap-2 text-white/20 text-xs">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            All systems operational
-          </div>
-        </div>
       </div>
 
       {/* Right panel — form */}
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
-        <div className="w-full max-w-sm">
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-md">
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center mb-8">
             <div className="bg-[#2d1b69] rounded-2xl px-6 py-4">
-              <img
-                src="/compass-logo.svg"
-                alt="Compass Planning"
-                className="w-48 object-contain"
-              />
+              <img src="/compass-logo.svg" alt="Compass Planning" className="w-48 object-contain" />
             </div>
           </div>
 
-          {/* ── Login / Register ── */}
-          {(mode === "login" || mode === "register") && (
-            <div className="animate-in fade-in duration-200">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-900 mb-1">
-                  {mode === "login" ? "Welcome back" : "Create account"}
-                </h2>
-                <p className="text-sm text-slate-500">
-                  {mode === "login"
-                    ? "Sign in to your Compass Planning account"
-                    : "Create your free account — no credit card required"}
-                </p>
-              </div>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
 
-              {/* Tab switcher */}
-              <div className="flex bg-slate-100 rounded-xl p-1 mb-6">
-                  {(["login", "register"] as const).map(m => (
-                  <button key={m} onClick={() => { setMode(m); reset(); }}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                      mode === m
-                        ? "bg-white shadow-sm text-slate-900"
-                        : "text-slate-400 hover:text-slate-600"
-                    }`}>
-                    {m === "login" ? "Sign In" : "Register"}
+            {/* Tab switcher */}
+            <div className="flex bg-slate-50 border-b border-slate-100">
+              {(["login", "register"] as const).map(m => (
+                <button key={m} onClick={() => { setMode(m); reset(); }}
+                  className={`flex-1 py-3.5 text-sm font-semibold transition-colors ${
+                    mode === m ? "bg-white text-violet-600 border-b-2 border-violet-500" : "text-slate-500 hover:text-slate-700"
+                  }`}>
+                  {m === "login" ? "Sign In" : "Register"}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-8">
+
+              {/* Forgot sent */}
+              {mode === "forgot-sent" && (
+                <div className="text-center space-y-4">
+                  <div className="w-12 h-12 bg-violet-100 rounded-full flex items-center justify-center mx-auto">
+                    <Check className="w-6 h-6 text-violet-600" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900">Check your email</h2>
+                  <p className="text-slate-500 text-sm">If <strong>{email}</strong> has an account, a password reset link has been sent.</p>
+                  <button onClick={() => { setMode("login"); reset(); }}
+                    className="text-sm text-violet-600 hover:text-violet-700 font-medium">
+                    Back to sign in
                   </button>
-                ))}
-              </div>
+                </div>
+              )}
 
-              <div className="space-y-3">
-                {mode === "register" && (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Field placeholder="First name" value={form.firstName} onChange={u("firstName")} />
-                      <Field placeholder="Last name"  value={form.lastName}  onChange={u("lastName")} />
-                    </div>
-                    <Field placeholder="Firm name (optional)" value={form.firmName} onChange={u("firmName")} />
-                    <select
-                      value={form.province}
-                      onChange={e => setForm(f => ({ ...f, province: e.target.value }))}
-                      className="w-full bg-white/60 backdrop-blur border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all"
-                    >
-                      <option value="">{t("auth.province")}</option>
-                      <optgroup label="Canada">
-                        {[["AB","Alberta"],["BC","Colombie-Britannique / British Columbia"],["MB","Manitoba"],
-                          ["NB","Nouveau-Brunswick / New Brunswick"],["NL","Terre-Neuve / Newfoundland"],
-                          ["NS","Nouvelle-Écosse / Nova Scotia"],["NT","Territoires du Nord-Ouest"],
-                          ["NU","Nunavut"],["ON","Ontario"],["PE","Île-du-Prince-Édouard / PEI"],
-                          ["QC","Québec"],["SK","Saskatchewan"],["YT","Yukon"]
-                        ].map(([code, name]) => <option key={code} value={code}>{code} — {name}</option>)}
-                      </optgroup>
-                      <optgroup label="United States">
-                        {["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
-                          "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
-                          "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
-                          "VA","WA","WV","WI","WY"].map(s => <option key={s} value={s}>{s}</option>)}
-                      </optgroup>
-                    </select>
-                  </>
-                )}
+              {/* Forgot form */}
+              {mode === "forgot" && (
+                <div className="space-y-4">
+                  <button onClick={() => { setMode("login"); reset(); }}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-2">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back
+                  </button>
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-1">Reset password</h2>
+                    <p className="text-sm text-slate-500">We'll send a reset link to your email.</p>
+                  </div>
+                  <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                  {error && <p className="text-red-500 text-sm">{error}</p>}
+                  <button onClick={handleForgot} disabled={busy}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-50">
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Send reset link
+                  </button>
+                </div>
+              )}
 
-                <Field
-                  type="email" placeholder="Email address"
-                  value={form.email} onChange={u("email")}
-                />
-
-                <Field
-                  type={showPw ? "text" : "password"}
-                  placeholder="Password"
-                  value={form.password}
-                  onChange={u("password")}
-                  onKeyDown={e => e.key === "Enter" && mode === "login" && submitLogin()}
-                  autoComplete="new-password"
-                  suffix={
+              {/* Login form */}
+              {mode === "login" && (
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-1">Welcome back</h2>
+                    <p className="text-sm text-slate-500">Sign in to your Compass Planning account.</p>
+                  </div>
+                  <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+                    autoComplete="email"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                  <div className="relative">
+                    <input type={showPw ? "text" : "password"} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                      onKeyDown={e => e.key === "Enter" && handleLogin()}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
                     <button type="button" onClick={() => setShowPw(s => !s)}
-                      className="text-slate-400 hover:text-slate-600 transition-colors">
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                       {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
-                  }
-                />
-
-                {mode === "register" && <PasswordStrength password={form.password} />}
-
-
-                {mode === "login" && (
-                  <div className="text-right">
-                    <button onClick={() => { setMode("forgot-email"); reset(); }}
-                      className="text-xs text-violet-600 hover:text-blue-800 font-medium transition-colors">
-                      Forgot password?
-                    </button>
                   </div>
-                )}
-
-                {error && (
-                  <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
-                    <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                    <p className="text-red-600 text-sm">{error}</p>
-                  </div>
-                )}
-
-                <button
-                  onClick={mode === "login" ? submitLogin : submitRegister}
-                  disabled={busy || (mode === "register" && (!pwOk || !form.firstName || !form.email))}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 hover:from-blue-700 hover:to-cyan-600 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-                >
-                  {busy
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Please wait…</>
-                    : mode === "login" ? "Sign In" : "Create Account"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Forgot — Email step ── */}
-          {mode === "forgot-email" && (
-            <div className="animate-in fade-in duration-200 space-y-4">
-              <button onClick={() => { setMode("login"); reset(); }}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-2">
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
-              </button>
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-1">Reset Password</h2>
-                <p className="text-sm text-slate-500">Enter your email to retrieve your security question.</p>
-              </div>
-              <Field type="email" placeholder="Email address" value={forgotEmail} onChange={setForgotEmail} />
-              {error && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
-                  <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                  <p className="text-red-600 text-sm">{error}</p>
+                  {error && (
+                    <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+                      <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                      <p className="text-red-600 text-sm">{error}</p>
+                    </div>
+                  )}
+                  <button onClick={handleLogin} disabled={busy}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 hover:from-violet-500 hover:to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {busy ? "Signing in…" : "Sign In"}
+                  </button>
+                  <button onClick={() => { setMode("forgot"); reset(); }}
+                    className="w-full text-center text-xs text-slate-400 hover:text-violet-600 transition-colors">
+                    Forgot password?
+                  </button>
                 </div>
               )}
-              <button onClick={submitForgotEmail} disabled={busy || !forgotEmail}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
-                {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Please wait…</> : "Continue"}
-              </button>
-            </div>
-          )}
 
-          {/* ── Forgot — Enter code ── */}
-          {mode === "forgot-code" && (
-            <div className="animate-in fade-in duration-200 space-y-4">
-              <button onClick={() => { setMode("forgot-email"); reset(); }}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors">
-                <ArrowLeft className="w-3.5 h-3.5" /> Back
-              </button>
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-1">Check your email</h2>
-                <p className="text-sm text-slate-500">Enter the 6-digit code we sent to <strong>{forgotEmail}</strong> and choose a new password.</p>
-              </div>
-              <Field placeholder="6-digit code" value={forgotCode} onChange={setForgotCode} maxLength={6} />
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-500">New Password</p>
-                <Field
-                  type={showNewPw ? "text" : "password"}
-                  placeholder="New password (min 12 characters)"
-                  value={newPassword} onChange={setNewPassword}
-                  suffix={
-                    <button type="button" onClick={() => setShowNewPw(s => !s)}
-                      className="text-slate-400 hover:text-slate-600 transition-colors">
-                      {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {/* Register form */}
+              {mode === "register" && (
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-1">Create account</h2>
+                    <p className="text-sm text-slate-500">Start your 14-day free trial — no credit card required.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                    <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                  </div>
+                  <input placeholder="Firm name (optional)" value={firmName} onChange={e => setFirmName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                  <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+                    autoComplete="email"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <select value={province} onChange={e => setProvince(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all">
+                      {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <select value={jurisdiction} onChange={e => setJurisdiction(e.target.value as "CA"|"US")}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all">
+                      <option value="CA">🇨🇦 Canada</option>
+                      <option value="US">🇺🇸 United States</option>
+                    </select>
+                  </div>
+                  <div className="relative">
+                    <input type={showPw ? "text" : "password"} placeholder="Password (min 8 characters)"
+                      value={password} onChange={e => setPassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                    <button type="button" onClick={() => setShowPw(s => !s)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
-                  }
-                />
-              </div>
-              {error && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
-                  <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                  <p className="text-red-600 text-sm">{error}</p>
+                  </div>
+                  <PasswordStrength password={password} />
+                  {error && (
+                    <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+                      <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                      <p className="text-red-600 text-sm">{error}</p>
+                    </div>
+                  )}
+                  <button onClick={handleRegister} disabled={busy}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 hover:from-violet-500 hover:to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {busy ? "Creating account…" : "Create Account"}
+                  </button>
+                  <p className="text-center text-xs text-slate-400">
+                    By registering you agree to our Terms of Service and Privacy Policy.
+                  </p>
                 </div>
               )}
-              <button onClick={submitForgotAnswer} disabled={busy || forgotCode.length !== 6 || newPassword.length < 12}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
-                {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Resetting…</> : "Reset Password"}
-              </button>
-            </div>
-          )}
 
-          {/* ── Forgot — Done ── */}
-          {mode === "forgot-done" && (
-            <div className="animate-in fade-in duration-200 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center mx-auto">
-                <Check className="w-7 h-7 text-emerald-500" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-1">Password Reset</h2>
-                <p className="text-sm text-slate-500">Your password has been updated. You can now sign in.</p>
-              </div>
-              <button onClick={() => { setMode("login"); reset(); setForgotEmail(""); setForgotAnswer(""); setNewPassword(""); }}
-                className="w-full bg-gradient-to-r from-violet-600 to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all">
-                Sign In
-              </button>
             </div>
-          )}
+          </div>
 
-          {/* Footer */}
-          <p className="text-center text-[10px] text-slate-300 mt-8">
-            © 2025 Compass Planning · Secure · Encrypted
+          <p className="text-center text-slate-400 text-xs mt-6">
+            © {new Date().getFullYear()} Compass Planning. All rights reserved.
           </p>
         </div>
       </div>

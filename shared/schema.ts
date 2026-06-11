@@ -43,16 +43,9 @@ export const users = pgTable("users", {
   lastName:     text("last_name").notNull(),
   firmName:     text("firm_name"),
   jurisdiction: text("jurisdiction").notNull().default("CA"),
+  firebaseUid:        text("firebase_uid").unique(),
   mustResetPassword:  boolean("must_reset_password").default(false),
   phone:              text("phone"),
-  // ── Email verification ───────────────────────────────────────────────────────
-  emailVerified:      boolean("email_verified").default(false),
-  emailVerifyCode:    text("email_verify_code"),
-  emailVerifyExpiry:  timestamp("email_verify_expiry"),
-  // ── SMS MFA ───────────────────────────────────────────────────────────────────
-  smsMfaEnabled:      boolean("sms_mfa_enabled").default(false),
-  smsCode:            text("sms_code"),
-  smsCodeExpiry:      timestamp("sms_code_expiry"),
   // ── Address ──────────────────────────────────────────────────────────────
   address:            text("address"),
   city:               text("city"),
@@ -71,9 +64,9 @@ export const users = pgTable("users", {
 });
 
 export const insertUserSchema = createInsertSchema(users)
-  .omit({ id: true, passwordHash: true, createdAt: true, updatedAt: true,
+  .omit({ id: true, passwordHash: true, firebaseUid: true, createdAt: true, updatedAt: true,
           stripeCustomerId: true, stripeSubscriptionId: true, trialEndsAt: true, currentPeriodEnd: true })
-  .extend({ password: z.string().min(8) });
+  .extend({ password: z.string().min(8).optional() });
 export type User = typeof users.$inferSelect;
 
 // ── Clients ───────────────────────────────────────────────────────────────────

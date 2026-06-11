@@ -166,6 +166,11 @@ async function runMigrations() {
 const app = express();
 
 // ── Item 2a: Helmet — security headers ────────────────────────────────────────
+// Initialise Firebase Admin SDK eagerly so it fails fast on bad config
+import { getFirebaseAdmin } from "./lib/firebaseAdmin.js";
+try { getFirebaseAdmin(); console.log("[firebase] Admin SDK initialized"); }
+catch (e: any) { console.error("[firebase] Admin SDK init failed:", e.message); }
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -265,7 +270,6 @@ app.use((req: any, _res: any, next: any) => {
 // ── Routes ─────────────────────────────────────────────────────────────────────
 app.get("/api/health",    (_req, res) => res.json({ ok: true }));
 app.use("/api/auth",      authRouter);
-app.use("/api/auth/mfa",   mfaRouter);
 app.use("/api/audit",       auditRouter);
 app.use("/api/subscription", subscriptionsRouter);
 app.use("/api/admin",        adminRouter);
