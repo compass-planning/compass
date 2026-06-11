@@ -1,11 +1,11 @@
 /**
  * SmsMfaChallenge.tsx
- * Shown during login when SMS MFA is enabled.
+ * Shown during login when MFA is enabled. Code arrives by email.
  * Sends the code and prompts for entry.
  */
 
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Smartphone, RefreshCw } from "lucide-react";
+import { Loader2, Mail, RefreshCw } from "lucide-react";
 import { api } from "../lib/api";
 
 interface Props {
@@ -19,7 +19,7 @@ export function SmsMfaChallenge({ mfaToken, onSuccess, onBack }: Props) {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [maskedPhone, setMaskedPhone] = useState<string | null>(null);
+  const [maskedEmail, setMaskedPhone] = useState<string | null>(null);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => { sendChallenge(); }, []);
@@ -28,7 +28,7 @@ export function SmsMfaChallenge({ mfaToken, onSuccess, onBack }: Props) {
     setSending(true);
     setError(null);
     try {
-      const res = await api.post<any>("/api/auth/mfa/sms-challenge", { mfaToken });
+      const res = await api.post<any>("/api/auth/mfa/challenge", { mfaToken });
       setMaskedPhone(res.message?.replace("Code sent to ", "") ?? null);
       inputs.current[0]?.focus();
     } catch (e: any) {
@@ -60,7 +60,7 @@ export function SmsMfaChallenge({ mfaToken, onSuccess, onBack }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post<any>("/api/auth/mfa/sms-complete", { mfaToken, code: c });
+      const res = await api.post<any>("/api/auth/mfa/complete", { mfaToken, code: c });
       onSuccess(res.token, res.user);
     } catch (e: any) {
       setError(e?.message ?? "Invalid code.");
@@ -74,16 +74,16 @@ export function SmsMfaChallenge({ mfaToken, onSuccess, onBack }: Props) {
   return (
     <div className="text-center">
       <div className="w-14 h-14 bg-violet-500/20 rounded-full flex items-center justify-center mx-auto mb-5">
-        <Smartphone className="w-7 h-7 text-violet-400" />
+        <Mail className="w-7 h-7 text-violet-400" />
       </div>
 
-      <h2 className="text-xl font-bold text-slate-800 mb-2">Check your phone</h2>
+      <h2 className="text-xl font-bold text-slate-800 mb-2">Check your email</h2>
       {sending ? (
         <p className="text-slate-500 text-sm mb-6">Sending code…</p>
-      ) : maskedPhone ? (
-        <p className="text-slate-500 text-sm mb-6">Code sent to <span className="text-violet-600 font-medium">{maskedPhone}</span></p>
+      ) : maskedEmail ? (
+        <p className="text-slate-500 text-sm mb-6">Code sent to <span className="text-violet-600 font-medium">{maskedEmail}</span></p>
       ) : (
-        <p className="text-slate-500 text-sm mb-6">Enter the 6-digit code from your SMS</p>
+        <p className="text-slate-500 text-sm mb-6">Enter the 6-digit code from your email</p>
       )}
 
       {error && (

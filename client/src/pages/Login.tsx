@@ -11,7 +11,6 @@ type Mode = "login" | "register" | "forgot-email" | "forgot-code" | "forgot-rese
 const EMPTY_FORM = {
   firstName: "", lastName: "", firmName: "", province: "",
   email: "", password: "",
-  phone: "",
 };
 
 // ── Password strength ─────────────────────────────────────────────────────────
@@ -141,7 +140,6 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
         firstName: form.firstName, lastName: form.lastName,
         firmName: form.firmName || undefined,
         province: form.province || undefined,
-        phone: form.phone || undefined,
       });
     } catch (e: any) { setError(e.message ?? "Registration failed"); }
     finally { setBusy(false); }
@@ -366,18 +364,6 @@ export default function Login({ isGaPortal = false }: { isGaPortal?: boolean }) 
 
                 {mode === "register" && <PasswordStrength password={form.password} />}
 
-                {mode === "register" && (
-                  <div className="pt-3 border-t border-slate-100 space-y-2">
-                    <p className="text-xs font-semibold text-slate-500">Mobile Number <span className="font-normal text-slate-400">(optional — for SMS verification)</span></p>
-                    <Field
-                      type="tel"
-                      placeholder="+1 416 555 0100"
-                      value={form.phone}
-                      onChange={u("phone")}
-                    />
-                    <p className="text-[10px] text-slate-400">Include country code. Used for two-factor authentication.</p>
-                  </div>
-                )}
 
                 {mode === "login" && (
                   <div className="text-right">
