@@ -134,7 +134,7 @@ export default function Login() {
 
         <div className="relative z-10">
           <div className="mb-10">
-            <img src="/compass-logo.svg" alt="Compass Planning" className="w-64 object-contain" />
+            <img src="/compass-logo.svg" alt="Compass Planning" className="w-96 object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-white leading-tight mb-4">
             Your financial future,<br />
@@ -174,7 +174,7 @@ export default function Login() {
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center mb-8">
             <div className="bg-[#2d1b69] rounded-2xl px-6 py-4">
-              <img src="/compass-logo.svg" alt="Compass Planning" className="w-48 object-contain" />
+              <img src="/compass-logo.svg" alt="Compass Planning" className="w-72 object-contain" />
             </div>
           </div>
 
