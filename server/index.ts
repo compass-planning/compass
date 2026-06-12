@@ -166,11 +166,6 @@ async function runMigrations() {
 const app = express();
 
 // ── Item 2a: Helmet — security headers ────────────────────────────────────────
-// Initialise Firebase Admin SDK eagerly so it fails fast on bad config
-import { getFirebaseAdmin } from "./lib/firebaseAdmin.js";
-try { getFirebaseAdmin(); console.log("[firebase] Admin SDK initialized"); }
-catch (e: any) { console.error("[firebase] Admin SDK init failed:", e.message); }
-
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
