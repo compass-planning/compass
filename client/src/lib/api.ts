@@ -1,17 +1,16 @@
 const BASE = "";
 
-export const token = {
-  get:   () => localStorage.getItem("fp_token"),
-  set:   (t: string) => localStorage.setItem("fp_token", t),
-  clear: () => localStorage.removeItem("fp_token"),
-};
+// Firebase token stored by auth.tsx
+function getToken(): string | null {
+  return localStorage.getItem("fb_token");
+}
 
 function notifyError(message: string) {
   window.dispatchEvent(new CustomEvent("api:error", { detail: { message } }));
 }
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
-  const t = token.get();
+  const t = getToken();
   const res = await fetch(`${BASE}${path}`, {
     ...opts,
     headers: {
@@ -20,11 +19,15 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
       ...(opts.headers ?? {}),
     },
   });
-  // Silent token rotation — server sends refreshed token on every authenticated request
-  const refreshed = res.headers.get("X-Refreshed-Token");
-  if (refreshed) token.set(refreshed);
 
-  if (res.status === 401) { token.clear(); window.location.href = "/"; throw new Error("Unauthorized"); }
+  if (res.status === 401) {
+    localStorage.removeItem("fb_token");
+    window.location.href = "/";
+    throw new Error("Unauthorized");
+  }
+  if (res.status === 429) {
+    throw new Error("Too many requests. Please wait a moment and try again.");
+  }
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
     const message = b.message ?? `HTTP ${res.status}`;
@@ -40,4 +43,11 @@ export const api = {
   patch:  <T>(p: string, b?: unknown) => req<T>(p, { method: "PATCH",  body: JSON.stringify(b) }),
   put:    <T>(p: string, b?: unknown) => req<T>(p, { method: "PUT",    body: JSON.stringify(b) }),
   delete: <T>(p: string)              => req<T>(p, { method: "DELETE" }),
+};
+
+// Keep for backward compat with any remaining token.set() calls
+export const token = {
+  get:   getToken,
+  set:   (t: string) => localStorage.setItem("fb_token", t),
+  clear: () => localStorage.removeItem("fb_token"),
 };

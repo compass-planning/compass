@@ -24,6 +24,7 @@ import { lettersRouter }    from "./routes/letters.js";
 import { goalsRouter }      from "./routes/goals.js";
 import { pensionRouter }    from "./routes/pension.js";
 import aiVoiceRouter        from "./routes/ai-voice.js";
+import { mfaRouter }        from "./routes/mfa.js";
 import { auditRouter }      from "./routes/audit.js";
 import { httpLogger, logger } from "./logger.js";
 import { planningRouter }   from "./planning/routes.js";
@@ -165,6 +166,8 @@ async function runMigrations() {
 const app = express();
 
 // ── Item 2a: Helmet — security headers ────────────────────────────────────────
+app.set("trust proxy", 1); // Required for rate limiting behind Fly.io proxy
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
