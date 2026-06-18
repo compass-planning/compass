@@ -24,7 +24,7 @@ import { lettersRouter }    from "./routes/letters.js";
 import { goalsRouter }      from "./routes/goals.js";
 import { pensionRouter }    from "./routes/pension.js";
 import aiVoiceRouter        from "./routes/ai-voice.js";
-import { mfaRouter }        from "./routes/mfa.js";
+//import { mfaRouter }        from "./routes/mfa.js";
 import { auditRouter }      from "./routes/audit.js";
 import { httpLogger, logger } from "./logger.js";
 import { planningRouter }   from "./planning/routes.js";
