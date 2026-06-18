@@ -1,7 +1,3 @@
-/**
- * client/src/lib/firebase.ts
- * Firebase client SDK initialization.
- */
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -10,10 +6,11 @@ import {
   signOut,
   sendEmailVerification,
   sendPasswordResetEmail,
-  updatePassword,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
   onAuthStateChanged,
+  multiFactor,
+  PhoneAuthProvider,
+  PhoneMultiFactorGenerator,
+  RecaptchaVerifier,
   type User as FirebaseUser,
 } from "firebase/auth";
 
@@ -35,9 +32,10 @@ export {
   signOut,
   sendEmailVerification,
   sendPasswordResetEmail,
-  updatePassword,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
   onAuthStateChanged,
+  multiFactor,
+  PhoneAuthProvider,
+  PhoneMultiFactorGenerator,
+  RecaptchaVerifier,
   type FirebaseUser,
 };
