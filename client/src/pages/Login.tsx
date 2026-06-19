@@ -168,8 +168,15 @@ export default function Login() {
   // ── Register step 2: send SMS to phone ───────────────────────────────────────
   async function handleSendSms() {
     if (!phone) return setError("Please enter your mobile number.");
+    // Normalize to E.164 format
+    let normalized = phone.replace(/[\s\-\(\)]/g, "");
+    if (!normalized.startsWith("+")) {
+      normalized = "+1" + normalized; // default to Canada/US
+    }
     setBusy(true); reset();
     try {
+      // Use normalized phone for Firebase
+      const phoneForFirebase = normalized;
       // Init reCAPTCHA if needed
       if (!recaptchaVerifier.current && recaptchaRef.current) {
         recaptchaVerifier.current = new RecaptchaVerifier(auth, recaptchaRef.current, {
@@ -179,7 +186,7 @@ export default function Login() {
 
       const provider = new PhoneAuthProvider(auth);
       const vid = await provider.verifyPhoneNumber(
-        { phoneNumber: phone, session: mfaSession.session },
+        { phoneNumber: phoneForFirebase, session: mfaSession.session },
         recaptchaVerifier.current
       );
       setVerificationId(vid);
@@ -396,10 +403,10 @@ export default function Login() {
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Mobile number</label>
-                    <input type="tel" placeholder="+1 416 555 0100" value={phone} onChange={e => setPhone(e.target.value)}
+                    <input type="tel" placeholder="+1 416 555 0100 (include +1)" value={phone} onChange={e => setPhone(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleSendSms()}
                       className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
-                    <p className="text-xs text-slate-400 mt-1.5">Include country code. A verification code will be sent via SMS.</p>
+                    <p className="text-xs text-slate-400 mt-1.5">Must include country code in E.164 format e.g. <strong>+16137958837</strong></p>
                   </div>
                   {error && <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5"><X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /><p className="text-red-600 text-sm">{error}</p></div>}
                   <button onClick={handleSendSms} disabled={busy}
