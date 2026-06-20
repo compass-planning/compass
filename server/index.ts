@@ -24,6 +24,7 @@ import { lettersRouter }    from "./routes/letters.js";
 import { goalsRouter }      from "./routes/goals.js";
 import { pensionRouter }    from "./routes/pension.js";
 import aiVoiceRouter        from "./routes/ai-voice.js";
+import { mfaRouter }        from "./routes/mfa.js";
 import { auditRouter }      from "./routes/audit.js";
 import { httpLogger, logger } from "./logger.js";
 import { planningRouter }   from "./planning/routes.js";
@@ -174,10 +175,11 @@ app.use(helmet({
       scriptSrc:   ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.gstatic.com", "https://recaptcha.net", "https://www.google.com"],
       styleSrc:    ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc:      ["'self'", "data:", "blob:"],
-      frameSrc:    ["'self'", "https://compass-planning.firebaseapp.com", "https://recaptcha.net", "https://www.google.com"],
       connectSrc:  ["'self'", "blob:", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://firebaseinstallations.googleapis.com"],
+      frameSrc:    ["'self'", "https://compass-planning.firebaseapp.com", "https://recaptcha.net", "https://www.google.com"],
       fontSrc:     ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc:   ["'none'"],
+      frameSrc:    ["'none'"],
       upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
     },
   },
@@ -227,7 +229,8 @@ const globalLimiter = rateLimit({
 // Auth limiter — tight, stops brute force on login/register/forgot
 const authLimiter = rateLimit({
   windowMs:          15 * 60 * 1000,  // 15 minutes
-  max:               20,              // 20 attempts per IP per 15 min
+  max:               50,              // 50 attempts per IP per 15 min
+  skip: (req) => req.path === "/me" || req.path === "/me/profile",  // don't rate-limit profile reads
   standardHeaders:   true,
   legacyHeaders:     false,
   message:           { message: "Too many authentication attempts. Please wait 15 minutes." },
@@ -244,7 +247,10 @@ const aiLimiter = rateLimit({
 });
 
 app.use(globalLimiter);
-app.use("/api/auth", authLimiter);
+// Only rate-limit actual auth actions, not profile reads
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
+app.use("/api/auth/forgot", authLimiter);
 app.use("/api/ai",   aiLimiter);
 
 // ── Jurisdiction context middleware ────────────────────────────────────────────
@@ -319,3 +325,4 @@ runMigrations().then(() => {
 });
 
 export default app;
+
