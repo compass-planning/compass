@@ -11,6 +11,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../lib/queryClient";
 import { TabLoader, Field, SectionHeader, Card, Input, Select, DobInput, Textarea } from "../components/ui/AppHelpers";
 import { ChangePasswordModal } from "../components/ChangePasswordModal";
+import { SubscriptionBanner } from "../components/SubscriptionBanner";
+import { SubscriptionModal }  from "../components/SubscriptionModal";
 const AITab = lazy(() => import("./FinancialPlanning").then(m => ({ default: m.AITab })));
 const NetWorthTabNew   = lazy(() => import("./MultiEntryTabs").then(m => ({ default: m.NetWorthTab })));
 const RetirementHub    = lazy(() => import("../components/RetirementHub").then(m => ({ default: m.RetirementHub })));
@@ -23,7 +25,7 @@ const GoalsTab         = lazy(() => import("./GoalsTab").then(m => ({ default: m
 const ExpensesTab      = lazy(() => import("./ExpensesTab").then(m => ({ default: m.ExpensesTab })));
 const ReportsTab       = lazy(() => import("./ReportsTab").then(m => ({ default: m.ReportsTab })));
 const LettersTab       = lazy(() => import("./LettersTab").then(m => ({ default: m.LettersTab })));
-const AgentsTab          = lazy(() => import("./AgentsTab").then(m => ({ default: m.AgentsTab })));
+// AgentsTab removed — hierarchy eliminated
 const InsightLedDashboard = lazy(() => import("../components/InsightLedDashboard").then(m => ({ default: m.InsightLedDashboard })));
 
 import { fmt$, fmtPct, initials, avatarBg, cn } from "../lib/utils";
@@ -31,7 +33,6 @@ import { VoiceProvider, useVoice, labelToKey } from "../contexts/VoiceContext";
 import { ClientOverview } from "./ClientOverview";
 import { MeetingRecorderTrigger, IntakeRecorderTrigger, type IntakeProfile } from "../components/MeetingRecorder";
 import { useHotkeys } from "../hooks/useHotkeys";
-import { useLocale } from "../hooks/useLocale";
 import { CommandPalette, type CommandAction } from "../components/ui/CommandPalette";
 import { InlineEdit } from "../components/ui/InlineEdit";
 import { translations, type T, type ClientLocale } from "../i18n/translations";
@@ -76,11 +77,11 @@ function householdScore(ov: Overview | null): number {
   return Math.max(0, score);
 }
 
-function scoreLabel(s: number, t: T = translations.en): { label: string; cls: string; dot: string } {
-  if (s >= 85) return { label: t.dashboard.statusOptimized,  cls: "text-emerald-600 bg-emerald-50 border-emerald-100", dot: "bg-emerald-400" };
-  if (s >= 70) return { label: t.dashboard.statusReview,     cls: "text-blue-600    bg-blue-50    border-blue-100",    dot: "bg-blue-400" };
-  if (s >= 50) return { label: t.dashboard.statusGaps,       cls: "text-amber-600   bg-amber-50   border-amber-100",   dot: "bg-amber-400" };
-  return               { label: t.dashboard.statusCritical,  cls: "text-red-600    bg-red-50     border-red-100",      dot: "bg-red-400" };
+function scoreLabel(s: number): { label: string; cls: string; dot: string } {
+  if (s >= 85) return { label: "Optimized",     cls: "text-emerald-600 bg-emerald-50 border-emerald-100", dot: "bg-emerald-400" };
+  if (s >= 70) return { label: "Review Needed", cls: "text-blue-600    bg-blue-50    border-blue-100",    dot: "bg-blue-400" };
+  if (s >= 50) return { label: "Planning Gaps", cls: "text-amber-600   bg-amber-50   border-amber-100",   dot: "bg-amber-400" };
+  return               { label: "Critical",      cls: "text-red-600    bg-red-50     border-red-100",      dot: "bg-red-400" };
 }
 
 function fmtNw(nw: number | null): string {
@@ -93,14 +94,13 @@ function fmtNw(nw: number | null): string {
 // ── Household Row ─────────────────────────────────────────────────────────────
 
 function HouseholdRow({
-  c, onSelect, onDelete, onOvReady, keyboardActive, tAdv = translations.en,
+  c, onSelect, onDelete, onOvReady, keyboardActive,
 }: {
   c: Client;
   onSelect: (c: Client) => void;
   onDelete: (id: number) => void;
   onOvReady?: (id: number, ov: Overview) => void;
   keyboardActive?: boolean;
-  tAdv?: T;
 }) {
   const [ov,       setOv]       = useState<Overview | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -113,18 +113,18 @@ function HouseholdRow({
   }, [c.id]);
 
   const score      = householdScore(ov);
-  const { label: statusLabel, cls: statusCls, dot: dotCls } = scoreLabel(score, tAdv);
+  const { label: statusLabel, cls: statusCls, dot: dotCls } = scoreLabel(score);
   const nw         = ov?.netWorth ?? null;
   const actionCount = ov
     ? ov.pendingAi + (ov.retirementProjections === 0 ? 1 : 0) + (ov.insuranceAnalyses === 0 ? 1 : 0)
     : 0;
 
   const gaps: string[] = [];
-  if (ov?.retirementProjections === 0) gaps.push(tAdv.dashboard.noRetirementPlan);
-  if (ov?.insuranceAnalyses     === 0) gaps.push(tAdv.dashboard.noInsuranceAnalysis);
+  if (ov?.retirementProjections === 0) gaps.push("No retirement plan");
+  if (ov?.insuranceAnalyses     === 0) gaps.push("No insurance analysis");
   if ((ov?.pendingAi ?? 0) > 0)        gaps.push(`${ov!.pendingAi} AI action${ov!.pendingAi > 1 ? "s" : ""} pending`);
 
-  const nextAction = gaps[0] ?? tAdv.dashboard.reviewComplete;
+  const nextAction = gaps[0] ?? "Review complete";
 
   const scoreColor = score >= 85 ? "#10b981" : score >= 70 ? "#3b82f6" : score >= 50 ? "#f59e0b" : "#ef4444";
 
@@ -229,9 +229,9 @@ function HouseholdRow({
               <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Planning Status</div>
               <div className="space-y-1.5">
                 {[
-                  { label: tAdv.client.retirementPlan, ok: (ov?.retirementProjections ?? 0) > 0, value: `${ov?.retirementProjections ?? 0} plan${(ov?.retirementProjections ?? 0) !== 1 ? "s" : ""}` },
-                  { label: tAdv.client.insuranceAnalysis, ok: (ov?.insuranceAnalyses ?? 0) > 0, value: `${ov?.insuranceAnalyses ?? 0} analysis` },
-                  { label: tAdv.client.aiInsights, ok: (ov?.pendingAi ?? 0) === 0, value: (ov?.pendingAi ?? 0) > 0 ? `${ov!.pendingAi} pending` : "Clear" },
+                  { label: "Retirement Plan", ok: (ov?.retirementProjections ?? 0) > 0, value: `${ov?.retirementProjections ?? 0} plan${(ov?.retirementProjections ?? 0) !== 1 ? "s" : ""}` },
+                  { label: "Insurance Analysis", ok: (ov?.insuranceAnalyses ?? 0) > 0, value: `${ov?.insuranceAnalyses ?? 0} analysis` },
+                  { label: "AI Insights", ok: (ov?.pendingAi ?? 0) === 0, value: (ov?.pendingAi ?? 0) > 0 ? `${ov!.pendingAi} pending` : "Clear" },
                 ].map(item => (
                   <div key={item.label} className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
@@ -249,9 +249,9 @@ function HouseholdRow({
               <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Financial Snapshot</div>
               <div className="space-y-1.5">
                 {[
-                  { label: tAdv.client.netWorthLabel,    value: fmtNw(nw) },
-                  { label: tAdv.client.regionLabel,       value: c.province ?? "—" },
-                  { label: tAdv.client.plans2, value: `${ov?.retirementProjections ?? 0} ${tAdv.client.plansOnFile}` },
+                  { label: "Net Worth",    value: fmtNw(nw) },
+                  { label: "Region",       value: c.province ?? "—" },
+                  { label: "Plans", value: `${ov?.retirementProjections ?? 0} on file` },
                 ].map(item => (
                   <div key={item.label} className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-500">{item.label}</span>
@@ -309,335 +309,37 @@ function HouseholdRow({
 
 // ── Clients Tab (Advisor Operations Queue) ────────────────────────────────────
 
-function ClientsTab({ onSelect, tAdv = translations.en }: { onSelect: (c: Client) => void; tAdv?: T }) {
-  const { user } = useAuth();
-  const jurisdiction  = (user as any)?.jurisdiction ?? "CA";
-  const regions       = jurisdiction === "US"
-    ? ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"]
-    : PROVINCES;
-  const regionLabel   = jurisdiction === "US" ? tAdv.client.stateLabel : tAdv.client.provinceLabel;
-  const defaultRegion = jurisdiction === "US" ? "CA" : "ON";
+// ClientsTab replaced — single user app, auto-selects the user's own profile
+function ClientsTab({ onSelect }: { onSelect: (c: Client) => void }) {
+  const [client, setClient] = useState<Client | null>(null);
 
-  const [clients,  setClients]  = useState<Client[]>([]);
-  const [search,   setSearch]   = useState("");
-  const [loading,  setLoading]  = useState(true);
-  const [showNew,  setShowNew]  = useState(false);
-  const [form,     setForm]     = useState({ firstName: "", lastName: "", email: "", phone: "", province: defaultRegion });
-  const [busy,     setBusy]     = useState(false);
-  const [ovData,   setOvData]   = useState<Record<number, Overview>>({});
-  const [navIdx,   setNavIdx]   = useState(-1);
-  const [sortBy,   setSortBy]   = useState<"name" | "score" | "nw">("score");
-
-  // Keyboard navigation
   useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      const t = e.target as HTMLElement;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
-      if (e.key === "ArrowDown") { e.preventDefault(); setNavIdx(i => Math.min(i + 1, clients.length - 1)); }
-      if (e.key === "ArrowUp")   { e.preventDefault(); setNavIdx(i => Math.max(i - 1, 0)); }
-      if (e.key === "Enter" && navIdx >= 0 && clients[navIdx]) onSelect(clients[navIdx]);
-    }
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [clients, navIdx, onSelect]);
+    api.get<Client>("/api/auth/me/profile").then(profile => {
+      setClient(profile);
+      onSelect(profile);
+    }).catch(() => {});
+  }, []);
 
-  const load = useCallback(() => {
-    const qs = search ? `?search=${encodeURIComponent(search)}` : "";
-    api.get<Client[]>(`/api/clients${qs}`).then(setClients).finally(() => setLoading(false));
-  }, [search]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function create() {
-    setBusy(true);
-    try {
-      const c = await api.post<Client>("/api/clients", { ...form, jurisdiction });
-      setClients(p => [c, ...p]);
-      setShowNew(false);
-      setForm({ firstName: "", lastName: "", email: "", phone: "", province: defaultRegion });
-      toast({ title: tAdv.client.clientAdded, description: `${form.firstName} ${form.lastName} added successfully` });
-    } catch (e: any) {
-      toast({ title: tAdv.common.error, description: e.message, variant: "destructive" });
-    } finally { setBusy(false); }
-  }
-
-  function handleIntakeComplete(profile: IntakeProfile) {
-    setForm(f => ({
-      ...f,
-      firstName: profile.firstName || f.firstName,
-      lastName:  profile.lastName  || f.lastName,
-      email:     profile.email     || f.email,
-      phone:     profile.phone     || f.phone,
-      province:  profile.province  || f.province,
-    }));
-    setShowNew(true);  // ensure form is open
-  }
-
-  function deleteClient(id: number) {
-    api.delete(`/api/clients/${id}`).then(() => setClients(p => p.filter(c => c.id !== id)));
-  }
-
-  // Aggregated intelligence
-  const allOv        = Object.values(ovData);
-  const totalAum     = allOv.reduce((s, o) => s + Math.max(0, o.netWorth), 0);
-  const totalPending = allOv.reduce((s, o) => s + o.pendingAi, 0);
-  const noRetirement = allOv.filter(o => o.retirementProjections === 0).length;
-  const noInsurance  = allOv.filter(o => o.insuranceAnalyses === 0).length;
-  const avgScore     = clients.length > 0
-    ? Math.round(clients.reduce((s, c) => s + householdScore(ovData[c.id] ?? null), 0) / clients.length)
-    : 0;
-
-  const fmtAum = (n: number) => n >= 1_000_000
-    ? `$${(n / 1_000_000).toFixed(1)}M`
-    : `$${Math.round(n / 1000)}K`;
-
-  // Sort clients
-  const sorted = [...clients].sort((a, b) => {
-    if (sortBy === "score") return householdScore(ovData[b.id] ?? null) - householdScore(ovData[a.id] ?? null);
-    if (sortBy === "nw")    return (ovData[b.id]?.netWorth ?? 0) - (ovData[a.id]?.netWorth ?? 0);
-    return `${a.lastName}${a.firstName}`.localeCompare(`${b.lastName}${b.firstName}`);
-  });
-
-  return (
-    <div className="flex h-full min-h-0 overflow-hidden">
-
-      {/* ══ LEFT — Operations Queue (75%) ══════════════════════════════════════ */}
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-slate-200 bg-white px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-sm font-bold text-slate-900 leading-none">{tAdv.common.householdQueue}</h1>
-              <p className="text-[10px] text-slate-400 mt-0.5">{clients.length} {tAdv.common.householdsCount} · {tAdv.common.avgScore} {avgScore}</p>
-            </div>
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-              <input
-                value={search} onChange={e => setSearch(e.target.value)}
-                placeholder={tAdv.common.searchHouseholds}
-                className="w-full pl-8 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition"
-              />
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-slate-400">
-              <span>{tAdv.common.sortLabel}</span>
-              {([["score",tAdv.common.colScoreStatus],["name",tAdv.common.colHousehold],["nw",tAdv.common.colNetWorth]] as [string,string][]).map(([k, l]) => (
-                <button key={k} onClick={() => setSortBy(k as any)}
-                  className={`px-2 py-1 rounded transition-colors font-medium ${sortBy === k ? "bg-blue-600 text-white" : "hover:bg-slate-100 text-slate-500"}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setShowNew(s => !s)}
-              className="flex items-center gap-1 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
-              <Plus className="w-3.5 h-3.5" />
-              {showNew ? tAdv.common.cancel : tAdv.common.newHousehold}
-            </button>
-          </div>
-        </div>
-
-        {/* New client form */}
-        {showNew && (
-          <div className="flex-shrink-0 border-b border-blue-100 bg-blue-50/40 px-5 py-3">
-            <div className="text-[10px] font-semibold text-blue-700 uppercase tracking-widest mb-2">New Household</div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
-              <input placeholder={tAdv.client.firstNamePlaceholder} value={form.firstName} onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 focus:border-blue-400" />
-              <input placeholder={tAdv.client.lastNamePlaceholder} value={form.lastName} onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 focus:border-blue-400" />
-              <input placeholder={tAdv.client.emailPlaceholder} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 focus:border-blue-400" />
-              <input placeholder={tAdv.client.phonePlaceholder} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 focus:border-blue-400" />
-              <select value={form.province} onChange={e => setForm(f => ({ ...f, province: e.target.value }))}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 focus:border-blue-400">
-                {regions.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={create} disabled={busy || !form.firstName || !form.lastName}
-                className="flex items-center gap-1 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                {busy ? <span className="w-3 h-3 border border-white/40 border-t-white rounded-full animate-spin" /> : <Plus className="w-3 h-3" />}
-                {tAdv.common.addHousehold}
-              </button>
-              <button onClick={() => setShowNew(false)} className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1">{tAdv.common.cancel}</button>
-              <div className="ml-auto">
-                <IntakeRecorderTrigger onComplete={handleIntakeComplete} />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Table header */}
-        <div className="flex-shrink-0 bg-slate-50 border-b border-slate-200">
-          <div
-            className="grid items-center px-4 py-2 text-[9px] font-semibold uppercase tracking-widest text-slate-400"
-            style={{ gridTemplateColumns: "2fr 110px 100px 120px 1fr 90px" }}
-          >
-            <span>{tAdv.common.colHousehold}</span>
-            <span>{tAdv.common.colScoreStatus}</span>
-            <span className="text-right">{tAdv.common.colNetWorth}</span>
-            <span>{tAdv.common.colAlerts}</span>
-            <span>{tAdv.common.colNextAction}</span>
-            <span className="text-right">{tAdv.common.colActions}</span>
-          </div>
-        </div>
-
-        {/* Queue */}
-        <div className="flex-1 overflow-y-auto bg-white pb-20">
-          {loading ? (
-            <div className="flex flex-col gap-2 p-4">
-              {[1,2,3,4,5].map(i => (
-                <div key={i} className="h-12 bg-slate-100 rounded-lg animate-pulse" style={{ opacity: 1 - i * 0.15 }} />
-              ))}
-            </div>
-          ) : sorted.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
-                <Users className="w-5 h-5 text-slate-400" />
-              </div>
-              <p className="text-sm font-semibold text-slate-700 mb-1">
-                {search ? tAdv.dashboard.noHouseholdsMatch + "" : tAdv.dashboard.noHouseholdsYet}
-              </p>
-              {!search && (
-                <button onClick={() => setShowNew(true)}
-                  className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-800">
-                  Add your first household →
-                </button>
-              )}
-            </div>
-          ) : (
-            sorted.map((c, idx) => (
-              <HouseholdRow
-                key={c.id} c={c} tAdv={tAdv}
-                onSelect={onSelect}
-                onDelete={deleteClient}
-                onOvReady={(id, ov) => setOvData(prev => ({ ...prev, [id]: ov }))}
-                keyboardActive={idx === navIdx}
-              />
-            ))
-          )}
-        </div>
+  if (!client) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="w-8 h-8 border-2 border-violet-600/30 border-t-violet-600 rounded-full animate-spin" />
       </div>
-
-      {/* ══ RIGHT — Intelligence Rail (25%) ════════════════════════════════════ */}
-      <div className="w-64 flex-shrink-0 border-l border-slate-200 bg-white flex flex-col overflow-y-auto pb-20">
-
-        {/* AUM Summary */}
-        <div className="px-4 py-3 border-b border-slate-100">
-          <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 mb-2">{tAdv.dashboard.bookSummary}</div>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { label: tAdv.dashboard.totalAum,      value: fmtAum(totalAum),        hi: true },
-              { label: tAdv.dashboard.avgScore,      value: `${avgScore}/100`,        hi: avgScore >= 70 },
-              { label: tAdv.dashboard.households,     value: String(clients.length),   hi: true },
-              { label: tAdv.dashboard.pendingActions,value: String(totalPending),     hi: totalPending === 0 },
-            ].map(s => (
-              <div key={s.label} className="bg-slate-50 rounded-lg p-2.5">
-                <div className="text-[9px] text-slate-400 mb-0.5">{s.label}</div>
-                <div className={`text-sm font-bold ${s.hi ? "text-slate-900" : "text-amber-600"}`}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Today's Priorities */}
-        <div className="px-4 py-3 border-b border-slate-100 flex-1">
-          <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 mb-2">{tAdv.dashboard.todaysPriorities}</div>
-          <div className="space-y-2">
-            {noRetirement > 0 && (
-              <div className="flex items-start gap-2 p-2 bg-amber-50 border border-amber-100 rounded-lg">
-                <span className="text-amber-500 text-xs mt-0.5">⚠</span>
-                <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
-                  {noRetirement} household{noRetirement > 1 ? "s" : ""} {noRetirement > 1 ? tAdv.dashboard.householdsMissingRetPlural : tAdv.dashboard.householdsMissingRet}
-                </p>
-              </div>
-            )}
-            {noInsurance > 0 && (
-              <div className="flex items-start gap-2 p-2 bg-amber-50 border border-amber-100 rounded-lg">
-                <span className="text-amber-500 text-xs mt-0.5">⚠</span>
-                <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
-                  {noInsurance} {noInsurance > 1 ? tAdv.dashboard.insuranceGaps : tAdv.dashboard.insuranceGap}
-                </p>
-              </div>
-            )}
-            {totalPending > 0 && (
-              <div className="flex items-start gap-2 p-2 bg-blue-50 border border-blue-100 rounded-lg">
-                <span className="text-blue-500 text-xs mt-0.5">↻</span>
-                <p className="text-[10px] text-blue-700 font-medium leading-relaxed">
-                  {totalPending} {totalPending > 1 ? tAdv.dashboard.aiRecs : tAdv.dashboard.aiRec}
-                </p>
-              </div>
-            )}
-            {noRetirement === 0 && noInsurance === 0 && totalPending === 0 && clients.length > 0 && (
-              <div className="flex items-start gap-2 p-2 bg-emerald-50 border border-emerald-100 rounded-lg">
-                <span className="text-emerald-500 text-xs mt-0.5">✓</span>
-                <p className="text-[10px] text-emerald-700 font-medium">{tAdv.dashboard.allUpToDate}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Opportunities */}
-        {clients.length > 0 && (
-          <div className="px-4 py-3 border-b border-slate-100">
-            <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 mb-2">{tAdv.dashboard.opportunities}</div>
-            <div className="space-y-1.5">
-              {noRetirement > 0 && (
-                <div className="flex items-center justify-between py-1 border-b border-slate-50">
-                  <span className="text-[10px] text-slate-600">{tAdv.dashboard.retirementProjections}</span>
-                  <span className="text-[10px] font-semibold text-blue-600">{noRetirement} {tAdv.dashboard.openCount}</span>
-                </div>
-              )}
-              {noInsurance > 0 && (
-                <div className="flex items-center justify-between py-1 border-b border-slate-50">
-                  <span className="text-[10px] text-slate-600">{tAdv.dashboard.insuranceAnalysis2}</span>
-                  <span className="text-[10px] font-semibold text-amber-600">{noInsurance} {tAdv.dashboard.gapsCount}{noInsurance > 1 ? "s" : ""}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between py-1">
-                <span className="text-[10px] text-slate-600">{tAdv.dashboard.householdsNeedReview}</span>
-                <span className="text-[10px] font-semibold text-slate-700">
-                  {clients.filter(c => householdScore(ovData[c.id] ?? null) < 70).length}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Score distribution */}
-        {clients.length > 0 && (
-          <div className="px-4 py-3">
-            <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 mb-2">{tAdv.dashboard.scoreDistribution}</div>
-            {[
-              { label: tAdv.dashboard.optimizedLabel,   count: clients.filter(c => householdScore(ovData[c.id] ?? null) >= 85).length, color: "bg-emerald-400" },
-              { label: tAdv.dashboard.reviewLabel,    count: clients.filter(c => { const s = householdScore(ovData[c.id] ?? null); return s >= 70 && s < 85; }).length, color: "bg-blue-400" },
-              { label: tAdv.dashboard.gapsLabel,      count: clients.filter(c => { const s = householdScore(ovData[c.id] ?? null); return s >= 50 && s < 70; }).length, color: "bg-amber-400" },
-              { label: tAdv.dashboard.criticalLabel,    count: clients.filter(c => householdScore(ovData[c.id] ?? null) < 50).length, color: "bg-red-400" },
-            ].map(s => (
-              <div key={s.label} className="flex items-center gap-2 mb-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.color}`} />
-                <span className="text-[10px] text-slate-500 flex-1">{s.label}</span>
-                <span className="text-[10px] font-bold text-slate-700">{s.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+    );
+  }
+  return null;
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Client Detail — shown when a client is selected (name, family, plans)
 // ─────────────────────────────────────────────────────────────────────────────
-function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, t = translations.en, advisorLocale = "en", level }: { client: Client; onBack: () => void; onPlanSelect: (p: Plan) => void; onUpdate: (c: Client) => void; onLocaleChange: (l: ClientLocale) => void; t?: T; advisorLocale?: ClientLocale; level?: string }) {
+function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, t = translations.en }: { client: Client; onBack: () => void; onPlanSelect: (p: Plan) => void; onUpdate: (c: Client) => void; onLocaleChange: (l: ClientLocale) => void; t?: T }) {
   const [plans, setPlans]       = useState<Plan[]>([]);
   const [editing, setEditing]   = useState(false);
   const [form, setForm]         = useState<Partial<Client>>({ ...client });
   const [busy, setBusy]         = useState(false);
-  const [newPlanName, setNewPlanName] = useState(t.client.financialPlanName);
+  const [newPlanName, setNewPlanName] = useState("Financial Plan");
   const u = (k: keyof Client, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   // Jurisdiction-aware region list
@@ -646,7 +348,7 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
   const regions = jurisdiction === "US"
     ? ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"]
     : PROVINCES;
-  const regionLabel = jurisdiction === "US" ? t.client.stateLabel : t.client.provinceLabel;
+  const regionLabel = jurisdiction === "US" ? "State" : "Province";
   const defaultRegion = jurisdiction === "US" ? "CA" : "ON";
 
   useEffect(() => {
@@ -656,7 +358,7 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
   async function save() {
     setBusy(true);
     try { const updated = await api.patch<Client>(`/api/clients/${client.id}`, form); setEditing(false); onUpdate(updated); }
-    catch (e: any) {toast({ title: t.common.error, description: e.message, variant: "destructive" }) }
+    catch (e: any) {toast({ title: "Error", description: e.message, variant: "destructive" }) }
     finally { setBusy(false); }
   }
 
@@ -664,7 +366,7 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
     try {
       const updated = await api.patch<Client>(`/api/clients/${client.id}`, data);
       onUpdate(updated);
-    } catch (e: any) { toast({ title: t.common.error, description: e.message, variant: "destructive" }); }
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
 
   async function deletePlan(planId: number) {
@@ -673,9 +375,9 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
     setPlans(prev => prev.filter(p => p.id !== planId));
   }
    async function createPlan() {
-     const p = await api.post<Plan>(`/api/clients/${client.id}/plans`, { name: level === "standard" ? "FNA" : newPlanName });
+     const p = await api.post<Plan>(`/api/clients/${client.id}/plans`, { name: newPlanName });
      setPlans(prev => [p, ...prev]);
-     if (level === "standard") {
+     if (false) { // removed standard-level gate
        onPlanSelect(p);
        // navigate to FNA tab after selecting plan
      } else {
@@ -707,8 +409,8 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
   const insights: { msg: string; color: string }[] = [];
   if (ov) {
     if (ov.pendingAi > 0) insights.push({ msg: `${ov.pendingAi} AI recommendation${ov.pendingAi > 1 ? "s" : ""} awaiting review`, color: "amber" });
-    if (ov.retirementProjections === 0) insights.push({ msg: t.client.overview.noRetirementProjection, color: "blue" });
-    if (ov.insuranceAnalyses === 0) insights.push({ msg: t.client.overview.noInsuranceAnalysis, color: "red" });
+    if (ov.retirementProjections === 0) insights.push({ msg: "No retirement projection on file — consider adding one", color: "blue" });
+    if (ov.insuranceAnalyses === 0) insights.push({ msg: "No insurance analysis on file — protection gap unknown", color: "red" });
   }
 
   return (
@@ -728,7 +430,33 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
           </div>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          
+          {/* Client language toggle — controls report/letter language */}
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-0.5" title="Report language">
+              <Globe className="w-3.5 h-3.5 text-gray-400 ml-1.5" />
+              {(["en", "fr"] as const).map(lang => {
+                const activeLang = client.preferredLanguage ?? (client.province === "QC" ? "fr" : "en");
+                return (
+                  <button
+                    key={lang}
+                    onClick={async () => {
+                      try {
+                        const updated = await api.patch<Client>(`/api/clients/${client.id}`, { preferredLanguage: lang });
+                        onUpdate(updated);
+                        onLocaleChange(lang as ClientLocale);
+                      } catch {}
+                    }}
+                    className={`text-xs font-semibold px-2 py-1 rounded transition-colors ${
+                      activeLang === lang
+                        ? "bg-[#0c1e3a] text-white"
+                        : "text-gray-400 hover:text-gray-700"
+                    }`}
+                  >{lang.toUpperCase()}</button>
+                );
+              })}
+            </div>
+            <span className="text-[10px] text-gray-400">Report lang</span>
+          </div>
           <div className="flex gap-2">
           {editing ? (
             <>
@@ -750,10 +478,10 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
       {ov && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: t.client.overview.netWorth,         value: nwFmt(ov.netWorth),            color: ov.netWorth >= 0 ? "text-emerald-600" : "text-red-500" },
-            { label: t.client.overview.retirementPlans,  value: String(ov.retirementProjections), color: ov.retirementProjections > 0 ? "text-blue-600" : "text-slate-400" },
-            { label: t.client.overview.insuranceAnalyses, value: String(ov.insuranceAnalyses),   color: ov.insuranceAnalyses > 0 ? "text-blue-600" : "text-red-500" },
-            { label: t.client.overview.pendingAiActions,  value: String(ov.pendingAi),           color: ov.pendingAi > 0 ? "text-amber-600" : "text-slate-400" },
+            { label: "Net Worth",          value: nwFmt(ov.netWorth),            color: ov.netWorth >= 0 ? "text-emerald-600" : "text-red-500" },
+            { label: "Retirement Plans",   value: String(ov.retirementProjections), color: ov.retirementProjections > 0 ? "text-blue-600" : "text-slate-400" },
+            { label: "Insurance Analyses", value: String(ov.insuranceAnalyses),   color: ov.insuranceAnalyses > 0 ? "text-blue-600" : "text-red-500" },
+            { label: "Pending AI Actions", value: String(ov.pendingAi),           color: ov.pendingAi > 0 ? "text-amber-600" : "text-slate-400" },
           ].map(s => (
             <div key={s.label} className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-sm transition-all duration-200">
               <p className="text-xs text-slate-500">{s.label}</p>
@@ -782,10 +510,10 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
             <div className="w-7 h-7 bg-[#0c1e3a]/5 rounded-lg flex items-center justify-center">
               <Users className="w-3.5 h-3.5 text-[#0c1e3a]" />
             </div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-700">{t.client.householdProfile}</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-700">Household Profile</h2>
           </div>
           <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            {hasSpouse ? t.client.jointFile : t.client.singleFile}
+            {hasSpouse ? "Joint File" : "Single File"}
           </span>
         </div>
 
@@ -796,18 +524,18 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
         )}>
           {/* ── Primary ── */}
           <PersonPanel
-            roleLabel={t.client.primaryClient}
+            roleLabel="Primary Client"
             avatarBg={avatarBg(client.firstName + client.lastName)}
             avatarInitials={initials(client.firstName, client.lastName)}
             displayName={`${client.firstName} ${client.lastName}`}
-            displaySubtitle={[client.occupation, ageFromDob(client.dateOfBirth) ? `${t.client.ageLabel} ${ageFromDob(client.dateOfBirth)}` : null].filter(Boolean).join(" · ") || t.client.occupationNotSet}
+            displaySubtitle={[client.occupation, ageFromDob(client.dateOfBirth) ? `age ${ageFromDob(client.dateOfBirth)}` : null].filter(Boolean).join(" · ") || "Occupation not set"}
             editing={editing}
             edit={
               <div className="grid grid-cols-2 gap-3">
-                <Input label={t.client.firstName}  value={form.firstName ?? ""} onChange={v => u("firstName", v)} />
-                <Input label={t.client.lastName}   value={form.lastName ?? ""}  onChange={v => u("lastName", v)} />
-                <Input label={t.client.email} type="email" value={form.email ?? ""} onChange={v => u("email", v)} />
-                <Input label={t.client.phone}       value={form.phone ?? ""}     onChange={v => u("phone", v)} />
+                <Input label="First Name"  value={form.firstName ?? ""} onChange={v => u("firstName", v)} />
+                <Input label="Last Name"   value={form.lastName ?? ""}  onChange={v => u("lastName", v)} />
+                <Input label="Email" type="email" value={form.email ?? ""} onChange={v => u("email", v)} />
+                <Input label="Phone"       value={form.phone ?? ""}     onChange={v => u("phone", v)} />
                 <DobInput label={t.client.dateOfBirth} value={form.dateOfBirth ?? ""} onChange={v => u("dateOfBirth", v)} />
                 <Select label={regionLabel} value={form.province ?? defaultRegion} onChange={v => u("province", v)} options={regions} />
                 <Input label={t.client.occupation}  value={form.occupation ?? ""} onChange={v => u("occupation", v)} />
@@ -819,15 +547,15 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
             }
             view={
               <dl className="grid grid-cols-2 gap-y-3 gap-x-6">
-                <ExecField label={t.client.email}          value={client.email}                     onSave={v => inlinePatch({ email: v })} />
-                <ExecField label={t.client.phone}          value={client.phone}                     onSave={v => inlinePatch({ phone: v })} />
+                <ExecField label="Email"          value={client.email}                     onSave={v => inlinePatch({ email: v })} />
+                <ExecField label="Phone"          value={client.phone}                     onSave={v => inlinePatch({ phone: v })} />
                 <ExecField label={t.client.dateOfBirth}  value={client.dateOfBirth}               onSave={v => inlinePatch({ dateOfBirth: v })} />
                 <ExecField label={t.client.province}       value={client.province}                  onSave={v => inlinePatch({ province: v })} />
                 <ExecField label={t.client.occupation}     value={client.occupation}                onSave={v => inlinePatch({ occupation: v })} />
                 <ExecField label={t.client.annualIncome}  value={fmt$(client.annualIncome)} mono   onSave={v => inlinePatch({ annualIncome: v })} type="number" />
-                <ExecField label={t.client.pension}        value={(client as any).pensionType}      onSave={v => inlinePatch({ pensionType: v } as any)} />
+                <ExecField label="Pension"        value={(client as any).pensionType}      onSave={v => inlinePatch({ pensionType: v } as any)} />
                 <ExecField label={t.client.retirementAge} value={client.retirementAge} mono        onSave={v => inlinePatch({ retirementAge: +v })} type="number" />
-                <ExecField label={t.client.desiredIncome} value={fmt$(client.desiredRetirementIncome)} mono onSave={v => inlinePatch({ desiredRetirementIncome: v })} type="number" />
+                <ExecField label="Desired Income" value={fmt$(client.desiredRetirementIncome)} mono onSave={v => inlinePatch({ desiredRetirementIncome: v })} type="number" />
               </dl>
             }
           />
@@ -835,11 +563,11 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
           {/* ── Spouse ── */}
           {(hasSpouse || editing) ? (
             <PersonPanel
-              roleLabel={t.client.spousePartner}
+              roleLabel="Spouse / Partner"
               avatarBg={avatarBg((client.spouseFirstName ?? "") + (client.spouseLastName ?? ""))}
               avatarInitials={initials(client.spouseFirstName ?? "", client.spouseLastName ?? "")}
               displayName={`${client.spouseFirstName ?? ""} ${client.spouseLastName ?? ""}`.trim()}
-              displaySubtitle={[client.spouseOccupation, ageFromDob(client.spouseDateOfBirth) ? `${t.client.ageLabel} ${ageFromDob(client.spouseDateOfBirth)}` : null].filter(Boolean).join(" · ") || t.client.occupationNotSet}
+              displaySubtitle={[client.spouseOccupation, ageFromDob(client.spouseDateOfBirth) ? `age ${ageFromDob(client.spouseDateOfBirth)}` : null].filter(Boolean).join(" · ") || "Occupation not set"}
               editing={editing}
               edit={
                 <div className="grid grid-cols-2 gap-3">
@@ -858,9 +586,9 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
                   <ExecField label={t.client.dateOfBirth}  value={client.spouseDateOfBirth}             onSave={v => inlinePatch({ spouseDateOfBirth: v })} />
                   <ExecField label={t.client.occupation}     value={client.spouseOccupation}               onSave={v => inlinePatch({ spouseOccupation: v })} />
                   <ExecField label={t.client.annualIncome}  value={fmt$(client.spouseAnnualIncome)} mono   onSave={v => inlinePatch({ spouseAnnualIncome: v })} type="number" />
-                  <ExecField label={t.client.pension}        value={(client as any).spousePensionType}      onSave={v => inlinePatch({ spousePensionType: v } as any)} />
+                  <ExecField label="Pension"        value={(client as any).spousePensionType}      onSave={v => inlinePatch({ spousePensionType: v } as any)} />
                   <ExecField label={t.client.retirementAge} value={client.spouseRetirementAge} mono        onSave={v => inlinePatch({ spouseRetirementAge: +v })} type="number" />
-                  <ExecField label={t.client.desiredIncome} value={fmt$(client.spouseDesiredRetirementIncome)} mono />
+                  <ExecField label="Desired Income" value={fmt$(client.spouseDesiredRetirementIncome)} mono />
                 </dl>
               }
             />
@@ -870,8 +598,8 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
                 <div className="w-10 h-10 rounded-full border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-300 mb-2">
                   <UserPlus className="w-4 h-4" />
                 </div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">{t.client.noSpouseOnFile}</p>
-                <button onClick={() => setEditing(true)} className="text-xs text-[#0c1e3a] font-semibold hover:underline">{t.client.addSpouseDetails}</button>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">No Spouse on File</p>
+                <button onClick={() => setEditing(true)} className="text-xs text-[#0c1e3a] font-semibold hover:underline">Add spouse details</button>
               </div>
             )
           )}
@@ -882,7 +610,7 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Baby className="w-3.5 h-3.5 text-gray-400" />
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{t.client.childrenDependants}</h3>
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Children & Dependants</h3>
               {dependants.length > 0 && (
                 <span className="text-[11px] text-gray-400 font-medium">· {dependants.length}</span>
               )}
@@ -902,7 +630,7 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
             // Edit mode — full row inputs
             <div className="space-y-2">
               {dependants.length === 0 && (
-                <p className="text-xs text-gray-400 italic">{t.client.noDependantsHint}</p>
+                <p className="text-xs text-gray-400 italic">No dependants — click "Add Dependant" to add a child or other family member.</p>
               )}
               {dependants.map((d: any, i: number) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-end bg-white rounded-lg border border-gray-100 p-3">
@@ -924,7 +652,7 @@ function ClientDetail({ client, onBack, onPlanSelect, onUpdate, onLocaleChange, 
               ))}
             </div>
           ) : dependants.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">{t.client.noDependants}</p>
+            <p className="text-xs text-gray-400 italic">No dependants on file</p>
           ) : (
             // View mode — horizontal row of executive avatar pills
             <div className="flex flex-wrap gap-2">
@@ -1037,25 +765,32 @@ function ExecField({ label, value, mono = false, onSave, type = "text" }: {
 export default function App() {
   const { toast } = useToast();
   const { user, logout } = useAuth();
-  const { locale: advisorLocaleStr } = useLocale();
-  const role = user?.role ?? "fa";
-  const level = user?.level ?? "standard";
   const [showForceReset, setShowForceReset] = useState(!!user?.mustResetPassword);
   const [showChangePw, setShowChangePw]     = useState(false);
-  const [tab, setTab] = useState<Tab>(user?.role === "ga" ? "agents" : "clients");
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [tab, setTab] = useState<Tab>("overview");
   const [nwSubtabHint, setNwSubtabHint] = useState<string | undefined>(undefined);
   const [person, setPerson] = useState<"primary"|"spouse"|"combined">("primary");
+  // Single profile — auto-loaded on boot, never null after first fetch
   const [client, setClient]       = useState<Client | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [clientLocale, setClientLocale] = useState<ClientLocale>("en");
 
-  // Auto-sync client locale when active client changes
+  // Auto-load the user's own financial profile on boot
+  useEffect(() => {
+    api.get<Client>("/api/auth/me/profile")
+      .then(setClient)
+      .catch(() => {})
+      .finally(() => setProfileLoading(false));
+  }, [user?.id]);
+
+  // Auto-sync locale from profile province
   useEffect(() => {
     if (!client) { setClientLocale("en"); return; }
     const lang = (client.preferredLanguage ?? (client.province === "QC" ? "fr" : "en")) as ClientLocale;
     setClientLocale(lang);
   }, [client?.id, client?.preferredLanguage]);
   const [plan, setPlan]           = useState<Plan | null>(null);
-  const [showClientDetail, setShowClientDetail] = useState(false);
   const [clientOv, setClientOv]   = useState<Overview | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [clientNavIdx, setClientNavIdx] = useState(0);
@@ -1082,7 +817,6 @@ export default function App() {
   // ── Global hotkeys ──────────────────────────────────────────────────────────
   const cmdActions: CommandAction[] = [
     // Navigation
-    { id: "nav-clients",    label: "Go to Clients",       group: "Navigate", icon: Users,          shortcut: "G C",   run: () => { setShowClientDetail(false); setTab("clients"); } },
     { id: "nav-overview",   label: "Go to Overview",      group: "Navigate", icon: LayoutDashboard, shortcut: "G O",   run: () => client && setTab("overview" as Tab) },
     { id: "nav-dashboard",  label: "Go to Dashboard",     group: "Navigate", icon: LayoutDashboard, shortcut: "G D",   run: () => client && setTab("dashboard") },
     { id: "nav-retirement", label: "Go to Retirement",    group: "Navigate", icon: PiggyBank,       shortcut: "G R",   run: () => client && setTab("retirementhub") },
@@ -1143,40 +877,19 @@ export default function App() {
     }
   }, [client?.id]);
 
-  function selectClient(c: Client) {
-    setClient(c);
-    setPlan(null);
-    setShowClientDetail(true);
-    setTab("profile" as Tab);
-  }
+  // Single-user: selectClient auto-navigates to overview
+  function selectClient(c: Client) { setClient(c); setTab("overview" as Tab); }
 
   function selectPlan(p: Plan) {
     setPlan(p);
     setShowClientDetail(false);
-    setTab(level === "standard" ? "protection" : "fp");
+    setTab("fp");
   }
 
-  function backToClients() {
-    setShowClientDetail(false);
-    setTab("clients");
-  }
+  function backToClients() { setTab("overview"); }
 
-  // Two locales, not one:
-  //   tAdvisor — drives advisor-facing UI (form labels, profile fields).
-  //              Follows the i18next locale which already hard-forces QC advisors to FR.
-  //   tAdvisor — drives the advisor UI (all forms, menus, planning screens)
-  //   tClient  — drives client-facing content; follows client preferredLanguage
-  //              UNLESS the advisor has manually toggled the sidebar to FR/EN,
-  //              in which case the sidebar locale overrides (so QC advisors
-  //              serving EN residents can flip the whole UI to EN).
-  const advisorLocale: ClientLocale = advisorLocaleStr === "fr" ? "fr" : "en";
-  const tAdvisor = (translations[advisorLocale as keyof typeof translations] ?? translations.en) as T;
-  // tClient rule:
-  //  - If advisor sidebar is FR (QC default OR manual toggle): show FR everywhere
-  //  - Otherwise: follow the client's own preferredLanguage setting
-  //    (so an EN advisor serving a QC client gets FR client-facing content)
-  const tClient = (advisorLocale === "fr" ? translations["fr"] : (translations[clientLocale as keyof typeof translations] ?? translations.en)) as T;
-  const clientName = client ? `${client.firstName} ${client.lastName}` : undefined;
+  const t: T = translations[clientLocale];
+  const userName = client ? `${client.firstName} ${client.lastName}` : (user ? `${user.firstName} ${user.lastName}` : undefined);
   const hasSpouse = !!client?.spouseFirstName;
   // Person toggle is rendered by HubShell inside each hub / PlanningDocFlow.
   return (
@@ -1194,15 +907,22 @@ export default function App() {
           </div>
         </div>
       )}
-      <Sidebar activeTab={tab} onTab={t => { if (t === "clients") { setShowClientDetail(false); } setTab(t as any); setPerson("primary"); setNwSubtabHint(undefined); }} clientName={clientName} role={role} level={level} />
+      <Sidebar activeTab={tab} onTab={t => { setTab(t as any); setPerson("primary"); setNwSubtabHint(undefined); }} userName={userName} />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        <SubscriptionBanner onUpgrade={() => setShowSubscriptionModal(true)} />
+        {showSubscriptionModal && (
+          <SubscriptionModal
+            onClose={() => setShowSubscriptionModal(false)}
+            currentStatus={user?.subscriptionStatus}
+          />
+        )}
         {/* Top bar */}
         <header className="flex-shrink-0 h-12 bg-white/60 backdrop-blur-md border-b border-slate-200/80 flex items-center px-5 justify-between relative z-10">
           <div className="flex items-center gap-3">
            <span className="text-[11px] font-bold tracking-[0.14em] uppercase text-brand-gradient border-r border-slate-200 pr-3 mr-1">
-             Compass Planning
+             Compass
           </span>
             {client && (
               <>
@@ -1218,7 +938,7 @@ export default function App() {
                 {plan && <><span className="text-slate-300">·</span><span className="text-sm text-slate-500">{plan.name}</span></>}
               </>
             )}
-            {!client && <span className="text-sm font-semibold text-slate-500">Financial Planning</span>}
+            {!client && <span className="text-sm font-semibold text-slate-500">My Financial Plan</span>}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -1239,7 +959,7 @@ export default function App() {
             <button onClick={() => setShowChangePw(true)} title="Change password" className="text-slate-400 hover:text-cyan-600 transition-colors">
               <KeyRound className="w-4 h-4" />
             </button>
-            <button onClick={() => { setTab("agents"); logout(); }} title="Sign out" className="text-slate-400 hover:text-rose-500 transition-colors">
+            <button onClick={() => { logout(); }} title="Sign out" className="text-slate-400 hover:text-rose-500 transition-colors">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -1251,14 +971,14 @@ export default function App() {
         {/* Content — wrap in fp-insightled so EVERY tab gets the
             light-grey page + dark-card treatment (sidebar/header are outside) */}
         <div key={tab} className={`flex-1 fp-insightled animate-in fade-in duration-300 ${
-            (tab === "networth" || tab === "clients") ? "overflow-hidden" : "overflow-y-auto"
+            tab === "networth" ? "overflow-hidden" : "overflow-y-auto"
         }`}>
           <Suspense fallback={<TabLoader />}>
           {/* Global context bar — shown when a client is selected and not on overview/clients */}
-          {client && !["clients", "overview", "dashboard"].includes(tab) && (
+          {client && !["overview", "dashboard", "profile"].includes(tab) && (
             <div className="flex justify-between items-center bg-white border-b border-slate-200 px-6 py-2">
               <button onClick={() => setTab("overview" as Tab)} className="text-sm font-medium text-slate-700 hover:text-blue-600 transition flex items-center gap-1.5">
-                <span>{client.firstName}{client.spouseFirstName ? ` & ${client.spouseFirstName}` : ""} {client.lastName}</span>
+                <span>My Financial Plan</span>
               </button>
               {clientOv && (
                 <div className="flex gap-4 text-xs text-slate-500">
@@ -1269,60 +989,47 @@ export default function App() {
               )}
             </div>
           )}
-          {tab === "clients" && !showClientDetail && (
-            <ClientsTab onSelect={selectClient} tAdv={tAdvisor} />
-          )}
-          {tab === "clients" && showClientDetail && client && (
-            <ClientDetail client={client} onBack={backToClients} onPlanSelect={selectPlan} onUpdate={setClient} onLocaleChange={setClientLocale} t={tAdvisor} advisorLocale={advisorLocale} level={level} />
-          )}
-          {tab !== "agents" && tab !== "clients" && !client && (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8">
-              <div className="w-16 h-16 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
-                <Users className="w-8 h-8 text-slate-400" />
-              </div>
-              <h2 className="text-lg font-bold text-slate-800 mb-1">Select a Client</h2>
-              <p className="text-sm text-slate-500 mb-4">Choose a client from the Clients tab to view their financial plan</p>
-              <button onClick={() => setTab("agents")} className="text-sm font-semibold text-white bg-brand-gradient hover:bg-brand-gradient-hover px-4 py-2 rounded-lg shadow-sm transition-all">
-                Go to Clients
-              </button>
+          {/* Profile loading spinner */}
+          {profileLoading && (
+            <div className="flex items-center justify-center h-full">
+              <div className="w-8 h-8 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
             </div>
           )}
-          {tab === "agents"  && <AgentsTab />}
-          {tab === "overview" && client && <ClientOverview client={client as any} onNavigate={(tab) => setTab(tab as Tab)} t={tAdvisor} />}
-          {tab === "profile"  && client && <ClientDetail client={client} onBack={() => setTab("overview" as Tab)} onPlanSelect={selectPlan} onUpdate={setClient} onLocaleChange={setClientLocale} t={tAdvisor} advisorLocale={advisorLocale} level={level} />}
-          {tab === "dashboard" && client && <InsightLedDashboard clientId={client.id} client={client} t={tAdvisor} onNavigate={(tab) => { const [tabKey, subtab] = tab.split(":"); setTab(tabKey as Tab); setNwSubtabHint(subtab); }} />}
+          {/* All tabs render once the profile is loaded */}
+          {!profileLoading && tab === "overview" && client && <ClientOverview client={client} onNavigate={(t) => setTab(t as Tab)} />}
+          {!profileLoading && tab === "profile"  && client && <ClientDetail client={client} onBack={() => setTab("overview" as Tab)} onPlanSelect={selectPlan} onUpdate={setClient} onLocaleChange={setClientLocale} t={t} />}
+          {!profileLoading && tab === "dashboard" && client && <InsightLedDashboard clientId={client.id} client={client} onNavigate={(t) => { const [tabKey, subtab] = t.split(":"); setTab(tabKey as Tab); setNwSubtabHint(subtab); }} />}
 
           {/* ── Merged Insight-Led hubs ─────────────────────────────────────────
               Each hub provides its own dark Insight-Led shell with sub-tabs.
               They render outside PlanningDocFlow because the hub is the shell. */}
-          {tab === "protection" && client && (
-            <ProtectionHub clientId={client.id} client={client} person={person} onPersonChange={setPerson} t={tAdvisor} />
+          {!profileLoading && tab === "protection" && client && (
+            <ProtectionHub clientId={client.id} client={client} person={person} onPersonChange={setPerson} t={t} />
           )}
-          {tab === "retirementhub" && client && (
-            <RetirementHub clientId={client.id} client={client} person={person} onPersonChange={setPerson} t={tAdvisor} />
+          {!profileLoading && tab === "retirementhub" && client && (
+            <RetirementHub clientId={client.id} client={client} person={person} onPersonChange={setPerson} t={t} />
           )}
-          {tab === "taxestate" && client && (
-            <TaxEstateHub clientId={client.id} client={client} person={person} onPersonChange={setPerson} t={tAdvisor} />
+          {!profileLoading && tab === "taxestate" && client && (
+            <TaxEstateHub clientId={client.id} client={client} person={person} onPersonChange={setPerson} t={t} />
           )}
-          {tab === "documents" && client && (
-            <DocumentsHub clientId={client.id} client={client} t={tAdvisor} advisorLocale={advisorLocale} />
+          {!profileLoading && tab === "documents" && client && (
+            <DocumentsHub clientId={client.id} client={client} />
           )}
-          {tab === "fp" && client && (
-            <FinancialPlanHub clientId={client.id} client={client} t={tAdvisor} />
+          {!profileLoading && tab === "fp" && client && (
+            <FinancialPlanHub clientId={client.id} client={client} t={t} />
           )}
 
           {/* ── Simple themed tabs — kept in PlanningDocFlow for voice/recording ── */}
-          {PLANNING_TABS.includes(tab as PlanningTab) && client && (
+          {!profileLoading && PLANNING_TABS.includes(tab as PlanningTab) && client && (
             <div className="fp-insightled h-full">
               <PlanningDocFlow
                 tab={tab as PlanningTab}
                 clientId={client.id}
                 clientName={client.spouseFirstName
-                  ? `${client.lastName} Family`
+                  ? `${client.firstName} & ${client.spouseFirstName}`
                   : `${client.firstName} ${client.lastName}`}
                 client={client}
                 initialNwSubtab={tab === "networth" ? nwSubtabHint : undefined}
-                tr={tAdvisor}
                 personToggle={tab === "goals" && hasSpouse ? {
                   person,
                   onPersonChange: setPerson,
@@ -1331,29 +1038,29 @@ export default function App() {
                   showCombined: true,
                 } : undefined}
               >
-                {tab === "networth" && (
+                {!profileLoading && tab === "networth" && (
                   <QueryClientProvider client={queryClient}>
-                      <NetWorthTabNew clientId={client.id} client={client} t={tAdvisor} />
+                      <NetWorthTabNew clientId={client.id} client={client} t={t} />
                    </QueryClientProvider>
                 )}
-                {tab === "goals"    && (
+                {!profileLoading && tab === "goals"    && (
                   <QueryClientProvider client={queryClient}>
-                    <GoalsTab clientId={client.id} client={client} t={tAdvisor} />
+                    <GoalsTab clientId={client.id} client={client} t={t} />
                  </QueryClientProvider>
                 )}
-                {tab === "debt"     && (
+                {!profileLoading && tab === "debt"     && (
                   <QueryClientProvider client={queryClient}>
-                    <DebtTab clientId={client.id} t={tAdvisor} />
+                    <DebtTab clientId={client.id} t={t} />
                   </QueryClientProvider>
                 )}
-                {tab === "expenses" && (
+                {!profileLoading && tab === "expenses" && (
                   <QueryClientProvider client={queryClient}>
-                    <ExpensesTab clientId={client.id} addTrigger={tab === "expenses" ? globalAddTrigger : 0} t={tAdvisor} />
+                    <ExpensesTab clientId={client.id} addTrigger={tab === "expenses" ? globalAddTrigger : 0} t={t} />
                   </QueryClientProvider>
                 )}
-                {tab === "ai" && (
+                {!profileLoading && tab === "ai" && (
                   <QueryClientProvider client={queryClient}>
-                    <AITab clientId={client.id} t={tAdvisor} />
+                    <AITab clientId={client.id} />
                   </QueryClientProvider>
                 )}
               </PlanningDocFlow>
