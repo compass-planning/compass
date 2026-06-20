@@ -49,39 +49,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function syncUser(firebaseUser: FirebaseUser) {
     try {
-      const idToken = await firebaseUser.getIdToken();
+      const idToken = await firebaseUser.getIdToken(true); // force refresh
       localStorage.setItem("fb_token", idToken);
-      let profile: User;
-      try {
-        profile = await api.get<User>("/api/auth/me");
-      } catch (e: any) {
-        // 429 = rate limited, don't clear user — just wait
-        if (e?.message?.includes("429") || e?.message?.includes("Too many")) {
-          console.warn("[auth] Rate limited on /me — keeping current state");
-          return;
-        }
-        // No Postgres record yet — create it
-        try {
-          await api.post("/api/auth/register", {
-            idToken,
-            firstName: firebaseUser.displayName?.split(" ")[0] ?? "User",
-            lastName:  firebaseUser.displayName?.split(" ").slice(1).join(" ") ?? "",
-            jurisdiction: "CA",
-          });
-          profile = await api.get<User>("/api/auth/me");
-        } catch (e2: any) {
-          // Rate limited on register too — don't clear, retry later
-          if (e2?.message?.includes("429") || e2?.message?.includes("Too many")) {
-            console.warn("[auth] Rate limited on /register — keeping current state");
-            return;
-          }
-          throw e2;
-        }
-      }
+      
+      const profile = await api.get<User>("/api/auth/me");
       setUser({ ...profile, emailVerified: firebaseUser.emailVerified });
-    } catch {
-      // Only clear user on genuine auth failures, not transient errors
+    } catch (e: any) {
+      const msg = e?.message ?? "";
+      if (msg.includes("429") || msg.includes("Too many")) {
+        // Rate limited — keep existing state, retry in 30s
+        console.warn("[auth] Rate limited — will retry");
+        setTimeout(() => syncUser(firebaseUser), 30000);
+        return;
+      }
+      if (msg.includes("401") || msg.includes("Unauthorized") || msg.includes("not found")) {
+        // No Postgres record — user needs to complete registration
+        // Don't loop — just clear so they go back to login
+        setUser(null);
+        localStorage.removeItem("fb_token");
+        return;
+      }
       setUser(null);
+      localStorage.removeItem("fb_token");
     }
   }
 
