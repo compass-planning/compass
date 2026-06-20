@@ -90,17 +90,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setFbUser(firebaseUser);
-      if (firebaseUser) {
-        await syncUser(firebaseUser);
-      } else {
-        setUser(null);
-        localStorage.removeItem("fb_token");
-      }
-      setLoading(false);
+      // Debounce — Firebase fires multiple events during MFA enrollment
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        if (firebaseUser) {
+          await syncUser(firebaseUser);
+        } else {
+          setUser(null);
+          localStorage.removeItem("fb_token");
+        }
+        setLoading(false);
+      }, 800);
     });
-    return unsub;
+    return () => { unsub(); clearTimeout(debounceTimer); };
   }, []);
 
   // Refresh token before it expires (Firebase tokens last 1hr)
