@@ -24,6 +24,7 @@ import { lettersRouter }    from "./routes/letters.js";
 import { goalsRouter }      from "./routes/goals.js";
 import { pensionRouter }    from "./routes/pension.js";
 import aiVoiceRouter        from "./routes/ai-voice.js";
+import { mfaRouter }        from "./routes/mfa.js";
 import { auditRouter }      from "./routes/audit.js";
 import { httpLogger, logger } from "./logger.js";
 import { planningRouter }   from "./planning/routes.js";
@@ -174,10 +175,11 @@ app.use(helmet({
       scriptSrc:   ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.gstatic.com", "https://recaptcha.net", "https://www.google.com"],
       styleSrc:    ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc:      ["'self'", "data:", "blob:"],
-      connectSrc:  ["'self'", "blob:", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://firebaseinstallations.googleapis.com"],
+      connectSrc:  ["'self'", "blob:", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://firebaseinstallations.googleapis.com", "https://www.google.com", "https://recaptcha.net", "https://recaptcha.google.com"],
       frameSrc:    ["'self'", "https://compass-planning.firebaseapp.com", "https://recaptcha.net", "https://www.google.com"],
       fontSrc:     ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc:   ["'none'"],
+      frameSrc:    ["'none'"],
       upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
     },
   },

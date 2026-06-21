@@ -23,6 +23,7 @@ import { setSuppressSync } from "../lib/auth";
 type Stage =
   | "login"
   | "register-details"
+  | "register-verify-email"
   | "register-mfa-phone"
   | "register-mfa-code"
   | "forgot"
@@ -120,8 +121,7 @@ export default function Login() {
   // MFA enrollment state
   const [verificationId, setVerificationId]   = useState("");
   const [mfaSession, setMfaSession]           = useState<any>(null);
-  const recaptchaRef = useRef<HTMLDivElement>(null);
-  const recaptchaVerifier = useRef<any>(null);
+  const recaptchaContainerId = "recaptcha-container-compass";
 
   function reset() { setError(""); }
 
@@ -154,11 +154,15 @@ export default function Login() {
       // Create Firebase account
       const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-      // Start MFA enrollment
+      // Send verification email (required before MFA enrollment)
+      const { sendEmailVerification } = await import("firebase/auth");
+      await sendEmailVerification(cred.user);
+
+      // Start MFA session (will be used after email verification)
       const mfaUser = multiFactor(cred.user);
       const session = await mfaUser.getSession();
       setMfaSession({ session, user: cred.user });
-      setStage("register-mfa-phone");
+      setStage("register-verify-email");
     } catch (e: any) {
       const msg = e.code === "auth/email-already-in-use" ? "An account with this email already exists."
         : e.code === "auth/weak-password" ? "Password must be at least 6 characters."
@@ -171,25 +175,30 @@ export default function Login() {
   async function handleSendSms() {
     if (!phone) return setError("Please enter your mobile number.");
     // Normalize to E.164 format
-    let normalized = phone.replace(/[\s\-\(\)]/g, "");
+    let normalized = phone.replace(/[\s\-\(\)\.]/g, "");
     if (!normalized.startsWith("+")) {
-      normalized = "+1" + normalized; // default to Canada/US
+      normalized = "+" + (normalized.startsWith("1") ? normalized : "1" + normalized);
     }
     setBusy(true); reset();
     try {
       // Use normalized phone for Firebase
       const phoneForFirebase = normalized;
-      // Init reCAPTCHA if needed
-      if (!recaptchaVerifier.current && recaptchaRef.current) {
-        recaptchaVerifier.current = new RecaptchaVerifier(auth, recaptchaRef.current, {
-          size: "invisible",
-        });
+      // Init reCAPTCHA — clear any existing instance first
+      let container = document.getElementById(recaptchaContainerId);
+      if (!container) {
+        container = document.createElement("div");
+        container.id = recaptchaContainerId;
+        document.body.appendChild(container);
       }
+      // Clear previous reCAPTCHA if any
+      container.innerHTML = "";
+      const verifier = new RecaptchaVerifier(auth, container, { size: "invisible" });
+      await verifier.render();
 
       const provider = new PhoneAuthProvider(auth);
       const vid = await provider.verifyPhoneNumber(
         { phoneNumber: phoneForFirebase, session: mfaSession.session },
-        recaptchaVerifier.current
+        verifier
       );
       setVerificationId(vid);
       setStage("register-mfa-code");
@@ -241,9 +250,6 @@ export default function Login() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-violet-50/30 to-purple-50/20">
-
-      {/* Invisible reCAPTCHA container */}
-      <div ref={recaptchaRef} />
 
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-[420px] xl:w-[480px] flex-col justify-between p-10 bg-gradient-to-br from-[#2d1b69] via-[#3b2080] to-[#4c1d95]">
@@ -390,6 +396,45 @@ export default function Login() {
                     {busy ? "Creating account…" : "Continue →"}
                   </button>
                   <p className="text-center text-xs text-slate-400">Next: set up two-factor authentication</p>
+                </div>
+              )}
+
+              {/* ── Register: verify email ── */}
+              {stage === "register-verify-email" && (
+                <div className="space-y-5 text-center">
+                  <div className="w-14 h-14 bg-violet-100 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-7 h-7 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900">Verify your email</h2>
+                  <p className="text-sm text-slate-500">We sent a verification link to <strong>{email}</strong>. Click it, then come back here.</p>
+                  {error && <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 text-left"><X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /><p className="text-red-600 text-sm">{error}</p></div>}
+                  <button onClick={async () => {
+                    setBusy(true); reset();
+                    try {
+                      await mfaSession.user.reload();
+                      if (!mfaSession.user.emailVerified) {
+                        setError("Email not verified yet. Check your inbox and click the link.");
+                        return;
+                      }
+                      // Refresh MFA session after email verification
+                      const mfaUser = multiFactor(mfaSession.user);
+                      const session = await mfaUser.getSession();
+                      setMfaSession({ ...mfaSession, session });
+                      setStage("register-mfa-phone");
+                    } catch (e: any) { setError(e.message); }
+                    finally { setBusy(false); }
+                  }} disabled={busy}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-50">
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    I verified my email →
+                  </button>
+                  <button onClick={async () => {
+                    const { sendEmailVerification } = await import("firebase/auth");
+                    await sendEmailVerification(mfaSession.user);
+                    setError("Verification email resent.");
+                  }} className="text-xs text-slate-400 hover:text-violet-600 transition-colors">
+                    Resend verification email
+                  </button>
                 </div>
               )}
 
