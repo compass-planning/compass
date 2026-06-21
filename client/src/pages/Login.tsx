@@ -18,6 +18,7 @@ import {
   RecaptchaVerifier,
 } from "firebase/auth";
 import { api } from "../lib/api";
+import { setSuppressSync } from "../lib/auth";
 
 type Stage =
   | "login"
@@ -149,6 +150,7 @@ export default function Login() {
       return setError("Please fill in all required fields.");
     setBusy(true); reset();
     try {
+      setSuppressSync(true); // Prevent auth loop during registration
       // Create Firebase account
       const cred = await createUserWithEmailAndPassword(auth, email, password);
 
@@ -216,8 +218,10 @@ export default function Login() {
         firmName: firmName || undefined,
         jurisdiction, province,
       });
+      setSuppressSync(false); // Allow sync now that Postgres record exists
       // AuthProvider onAuthStateChanged will pick up the signed-in user
     } catch (e: any) {
+      setSuppressSync(false); // Reset on error
       const msg = e.code === "auth/invalid-verification-code" ? "Invalid code. Please try again."
         : e.message;
       setError(msg);
