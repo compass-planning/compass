@@ -10,6 +10,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
 } from "../lib/firebase";
 import {
   multiFactor,
@@ -544,3 +545,5 @@ export default function Login() {
     </div>
   );
 }
+
+
