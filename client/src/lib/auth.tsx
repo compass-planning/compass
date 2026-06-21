@@ -43,8 +43,7 @@ const Ctx = createContext<AuthCtx>({
 });
 
 // Set this to true during registration to prevent premature sync
-let suppressSync = false;
-export function setSuppressSync(val: boolean) { suppressSync = val; }
+export function setSuppressSync(val: boolean) { sessionStorage.setItem("suppressSync", val ? "1" : ""); }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,    setUser]    = useState<User | null>(null);
@@ -89,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Debounce — Firebase fires multiple events during MFA enrollment
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
-        if (suppressSync) {
+        if (sessionStorage.getItem("suppressSync")) {
           setLoading(false);
           return; // Registration in progress — don't sync yet
         }
@@ -130,3 +129,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() { return useContext(Ctx); }
+
+

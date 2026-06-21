@@ -155,7 +155,7 @@ export default function Login() {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
 
       // Send verification email (required before MFA enrollment)
-      const { sendEmailVerification } = await import("firebase/auth");
+      
       await sendEmailVerification(cred.user);
 
       // Start MFA session (will be used after email verification)
@@ -429,7 +429,7 @@ export default function Login() {
                     I verified my email →
                   </button>
                   <button onClick={async () => {
-                    const { sendEmailVerification } = await import("firebase/auth");
+                    
                     await sendEmailVerification(mfaSession.user);
                     setError("Verification email resent.");
                   }} className="text-xs text-slate-400 hover:text-violet-600 transition-colors">
