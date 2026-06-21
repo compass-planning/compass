@@ -229,7 +229,7 @@ export default function Login() {
         jurisdiction, province,
       });
       setSuppressSync(false); // Allow sync now that Postgres record exists
-      // AuthProvider onAuthStateChanged will pick up the signed-in user
+      window.location.reload(); // Trigger fresh sync after registration complete
     } catch (e: any) {
       setSuppressSync(false); // Reset on error
       const msg = e.code === "auth/invalid-verification-code" ? "Invalid code. Please try again."
@@ -545,5 +545,6 @@ export default function Login() {
     </div>
   );
 }
+
 
 
