@@ -1,8 +1,40 @@
+# Dependencies (rebuilt inside Docker)
 **/node_modules
-**/dist
-**/.env
-**/drizzle
-**/.DS_Store
 node_modules/.vite
 .vite
+
+# Build output (rebuilt inside Docker)
+**/dist
+
+# Environment files — never bake secrets into the image
+**/.env
+**/.env.*
+!**/.env.example
+
+# Dev/local config
 fly.toml
+.DS_Store
+**/.DS_Store
+
+# Source control
+.git
+.gitignore
+
+# Editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Test files — not needed in prod image
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+**/coverage
+
+# Drizzle migration state (migrations run separately)
+**/drizzle
+
+# Docs and misc
+*.md
+README*
