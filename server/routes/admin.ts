@@ -18,6 +18,7 @@
  */
 
 import { Router, type Request, type Response, type NextFunction } from "express";
+import { safeMsg, AppError } from "../lib/errorUtils.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { db } from "../db/index.js";
@@ -78,7 +79,7 @@ r.post("/login", async (req: Request, res: Response) => {
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -118,7 +119,7 @@ r.get("/stats", requireAdmin, async (_req: AdminReq, res: Response) => {
 
     res.json({ users: totals, tickets, expiringSoon: expiringSoon.count });
   } catch (e: any) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -163,7 +164,7 @@ r.get("/users", requireAdmin, async (req: AdminReq, res: Response) => {
     const [{ total }] = await db.select({ total: count() }).from(users);
     res.json({ users: rows, total, page, limit });
   } catch (e: any) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -181,7 +182,7 @@ r.get("/users/:id", requireAdmin, async (req: AdminReq, res: Response) => {
 
     res.json({ ...u, tickets });
   } catch (e: any) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -207,7 +208,7 @@ r.patch("/users/:id", requireAdmin, async (req: AdminReq, res: Response) => {
     res.json(u);
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -229,7 +230,7 @@ r.get("/tickets", requireAdmin, async (req: AdminReq, res: Response) => {
     const [{ total }] = await db.select({ total: count() }).from(supportTickets);
     res.json({ tickets: rows, total, page, limit });
   } catch (e: any) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -254,7 +255,7 @@ r.post("/tickets", requireAdmin, async (req: AdminReq, res: Response) => {
     res.status(201).json(ticket);
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -279,7 +280,7 @@ r.patch("/tickets/:id", requireAdmin, async (req: AdminReq, res: Response) => {
     res.json(ticket);
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -309,7 +310,7 @@ r.post("/seed", async (req: Request, res: Response) => {
     res.status(201).json({ message: "Super-admin created.", admin: a });
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 

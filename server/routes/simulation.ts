@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { safeMsg, AppError } from "../lib/errorUtils.js";
 import { Router } from "express";
 import { z } from "zod";
 import { isAuthenticated, type AuthRequest } from "../auth/index.js";
@@ -91,7 +92,7 @@ r.post(
         return res.status(400).json({ message: err.errors[0]?.message ?? "Validation error" });
       }
       console.error("[montecarlo]", err);
-      res.status(500).json({ message: err.message ?? "Simulation failed" });
+      res.status(500).json({ message: safeMsg(err, "Simulation failed") });
     }
   }
 );
@@ -179,7 +180,7 @@ r.post(
         return res.status(400).json({ message: err.errors[0]?.message ?? "Validation error" });
       }
       console.error("[guardrail]", err);
-      res.status(500).json({ message: err.message ?? "Guardrail check failed" });
+      res.status(500).json({ message: safeMsg(err, "Guardrail check failed") });
     }
   }
 );
@@ -210,7 +211,7 @@ r.get(
       res.json(history);
     } catch (err: any) {
       console.error("[simulation history]", err);
-      res.status(500).json({ message: err.message ?? "Failed to fetch history" });
+      res.status(500).json({ message: safeMsg(err, "Failed to fetch history") });
     }
   }
 );
@@ -254,7 +255,7 @@ r.get(
       });
     } catch (err: any) {
       console.error("[guardrail status]", err);
-      res.status(500).json({ message: err.message ?? "Failed to fetch status" });
+      res.status(500).json({ message: safeMsg(err, "Failed to fetch status") });
     }
   }
 );

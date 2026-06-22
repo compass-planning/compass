@@ -1,4 +1,5 @@
 import { clientCreateSchema, clientPatchSchema } from "../../shared/validators.js";
+import { safeMsg, AppError } from "../lib/errorUtils.js";
 import type { Response } from "express";
 import { Router } from "express";
 import { db } from "../db/index.js";
@@ -53,7 +54,7 @@ r.post("/", async (req: AuthRequest, res: Response) => {
     res.status(201).json(c);
   } catch (e: any) {
     console.error("[clients/post]", e.message);
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -66,7 +67,7 @@ r.patch("/:id", async (req: AuthRequest, res: Response) => {
     res.json(u);
   } catch (e: any) {
     console.error("[clients/patch]", e.message);
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 

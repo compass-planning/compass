@@ -1,4 +1,5 @@
 import { pensionCreateSchema, pensionPatchSchema } from "../../shared/validators.js";
+import { safeMsg, AppError } from "../lib/errorUtils.js";
 import type { Response } from "express";
 import { Router } from "express";
 import { db } from "../db/index.js";
@@ -13,18 +14,18 @@ r.use(isAuthenticated);
 r.get("/clients/:id/pensions", async (req: AuthRequest, res: Response) => {
   const cid = +req.params.id;
   let _owns = false;
-  try { _owns = await ownsClient(cid, req.userId!); } catch (e: any) { return res.status(500).json({ message: e.message }); }
+  try { _owns = await ownsClient(cid, req.userId!); } catch (e: any) { return res.status(500).json({ message: safeMsg(e) }); }
   if (!_owns) return res.status(404).json({ message: "Not found" });
   try {
     const rows = await db.select().from(pensionPlans).where(eq(pensionPlans.clientId, cid));
     res.json(rows);
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
+  } catch (e: any) { res.status(500).json({ message: safeMsg(e) }); }
 });
 
 r.post("/clients/:id/pensions", async (req: AuthRequest, res: Response) => {
   const cid = +req.params.id;
   let _owns = false;
-  try { _owns = await ownsClient(cid, req.userId!); } catch (e: any) { return res.status(500).json({ message: e.message }); }
+  try { _owns = await ownsClient(cid, req.userId!); } catch (e: any) { return res.status(500).json({ message: safeMsg(e) }); }
   if (!_owns) return res.status(404).json({ message: "Not found" });
   try {
   const body = req.body;
@@ -49,7 +50,7 @@ r.post("/clients/:id/pensions", async (req: AuthRequest, res: Response) => {
     notes: body.notes || null,
   }).returning();
   res.status(201).json(row);
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
+  } catch (e: any) { res.status(500).json({ message: safeMsg(e) }); }
 });
 
 r.patch("/pensions/:id", async (req: AuthRequest, res: Response) => {
@@ -57,7 +58,7 @@ r.patch("/pensions/:id", async (req: AuthRequest, res: Response) => {
   const [ex] = await db.select({ id: pensionPlans.id, clientId: pensionPlans.clientId })
     .from(pensionPlans).where(eq(pensionPlans.id, +req.params.id));
   let _owns = false;
-  try { _owns = !ex ? false : await ownsClient(ex.clientId, req.userId!); } catch (e: any) { return res.status(500).json({ message: e.message }); }
+  try { _owns = !ex ? false : await ownsClient(ex.clientId, req.userId!); } catch (e: any) { return res.status(500).json({ message: safeMsg(e) }); }
   if (!ex || !_owns) return res.status(404).json({ message: "Not found" });
   const body = req.body;
   const [u] = await db.update(pensionPlans).set({
@@ -81,7 +82,7 @@ r.patch("/pensions/:id", async (req: AuthRequest, res: Response) => {
     updatedAt: new Date(),
   } as any).where(eq(pensionPlans.id, ex.id)).returning();
   res.json(u);
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
+  } catch (e: any) { res.status(500).json({ message: safeMsg(e) }); }
 });
 
 r.delete("/pensions/:id", async (req: AuthRequest, res: Response) => {
@@ -89,11 +90,11 @@ r.delete("/pensions/:id", async (req: AuthRequest, res: Response) => {
   const [ex] = await db.select({ id: pensionPlans.id, clientId: pensionPlans.clientId })
     .from(pensionPlans).where(eq(pensionPlans.id, +req.params.id));
   let _owns = false;
-  try { _owns = !ex ? false : await ownsClient(ex.clientId, req.userId!); } catch (e: any) { return res.status(500).json({ message: e.message }); }
+  try { _owns = !ex ? false : await ownsClient(ex.clientId, req.userId!); } catch (e: any) { return res.status(500).json({ message: safeMsg(e) }); }
   if (!ex || !_owns) return res.status(404).json({ message: "Not found" });
   await db.delete(pensionPlans).where(eq(pensionPlans.id, ex.id));
   res.json({ ok: true });
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
+  } catch (e: any) { res.status(500).json({ message: safeMsg(e) }); }
 });
 
 export { r as pensionRouter };

@@ -9,6 +9,7 @@
  *   GET  /api/audit/export             — CSV export (for breach response / OPC requests)
  */
 import type { Response }   from "express";
+import { safeMsg, AppError } from "../lib/errorUtils.js";
 import { Router }           from "express";
 import { db }               from "../db/index.js";
 import { auditLog, users }  from "../../shared/schema.js";
@@ -44,7 +45,7 @@ r.get("/", async (req: AuthRequest, res: Response) => {
 
     res.json({ page, limit, rows });
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMsg(err) });
   }
 });
 
@@ -63,7 +64,7 @@ r.get("/transfers", async (req: AuthRequest, res: Response) => {
 
     res.json({ rows });
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMsg(err) });
   }
 });
 
@@ -80,7 +81,7 @@ r.get("/client/:clientId", async (req: AuthRequest, res: Response) => {
 
     res.json({ rows });
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMsg(err) });
   }
 });
 
@@ -117,7 +118,7 @@ r.get("/export", async (req: AuthRequest, res: Response) => {
     res.setHeader("Content-Disposition", `attachment; filename="pipeda-audit-${date}.csv"`);
     res.send(csv);
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMsg(err) });
   }
 });
 

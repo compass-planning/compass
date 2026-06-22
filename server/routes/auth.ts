@@ -13,6 +13,7 @@
  */
 
 import type { Request, Response } from "express";
+import { safeMsg, AppError } from "../lib/errorUtils.js";
 import { Router } from "express";
 import { getDb } from "../db/index.js";
 import { users, clients } from "../../shared/schema.js";
@@ -83,7 +84,7 @@ r.post("/register", async (req: Request, res: Response) => {
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
     console.error("[register]", e.message);
-    res.status(500).json({ message: e.message ?? "Server error" });
+    res.status(500).json({ message: safeMsg(e, "Server error") });
   }
 });
 
@@ -112,7 +113,7 @@ r.patch("/me", isAuthenticated, async (req: AuthRequest, res: Response) => {
       .returning({ id: users.id, email: users.email, firstName: users.firstName, lastName: users.lastName });
     res.json(u);
   } catch (e: any) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -139,7 +140,7 @@ r.get("/me/profile", isAuthenticated, async (req: AuthRequest, res: Response) =>
     }
     res.json(profile);
   } catch (e: any) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 
@@ -155,7 +156,7 @@ r.patch("/me/profile", isAuthenticated, async (req: AuthRequest, res: Response) 
     if (!updated) return res.status(404).json({ message: "Profile not found" });
     res.json(updated);
   } catch (e: any) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeMsg(e) });
   }
 });
 

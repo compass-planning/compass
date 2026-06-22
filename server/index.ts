@@ -26,6 +26,7 @@ import { pensionRouter }    from "./routes/pension.js";
 import aiVoiceRouter        from "./routes/ai-voice.js";
 import { auditRouter }      from "./routes/audit.js";
 import { httpLogger, logger } from "./logger.js";
+import { safeMsg, AppError } from "./lib/errorUtils.js";
 import { planningRouter }   from "./planning/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -167,18 +168,48 @@ const app = express();
 // ── Item 2a: Helmet — security headers ────────────────────────────────────────
 app.set("trust proxy", 1); // Required for rate limiting behind Fly.io proxy
 
+// ── Helmet / CSP ──────────────────────────────────────────────────────────────
+// scriptSrc: no unsafe-inline or unsafe-eval in production.
+// Vite's built output uses external <script type="module"> files only — no
+// inline scripts needed. unsafe-eval was a dev-HMR artifact; drop it in prod.
+// Firebase Auth and reCAPTCHA load scripts from gstatic/google — allowed explicitly.
+// styleSrc keeps unsafe-inline because CSS-in-JS (Tailwind) injects style tags;
+// removing it requires a nonce pipeline that isn't worth the complexity here.
+const IS_DEV = process.env.NODE_ENV !== "production";
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc:  ["'self'"],
-      scriptSrc:   ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.gstatic.com", "https://recaptcha.net", "https://www.google.com"],
+      scriptSrc:   [
+        "'self'",
+        "https://www.gstatic.com",
+        "https://recaptcha.net",
+        "https://www.google.com",
+        // unsafe-inline/eval only in dev (Vite HMR). Never in production.
+        ...(IS_DEV ? ["'unsafe-inline'", "'unsafe-eval'"] : []),
+      ],
       styleSrc:    ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc:      ["'self'", "data:", "blob:"],
-      connectSrc:  ["'self'", "blob:", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://firebaseinstallations.googleapis.com", "https://www.google.com", "https://recaptcha.net", "https://recaptcha.google.com"],
+      connectSrc:  [
+        "'self'",
+        "blob:",
+        "https://identitytoolkit.googleapis.com",
+        "https://securetoken.googleapis.com",
+        "https://www.googleapis.com",
+        "https://firebaseinstallations.googleapis.com",
+        "https://www.google.com",
+        "https://recaptcha.net",
+        "https://recaptcha.google.com",
+        // Anthropic API (AI plan generation)
+        "https://api.anthropic.com",
+      ],
       frameSrc:    ["'self'", "https://compass-planning.firebaseapp.com", "https://recaptcha.net", "https://www.google.com"],
       fontSrc:     ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc:   ["'none'"],
-      upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
+      baseUri:     ["'self'"],           // prevents base tag hijacking
+      formAction:  ["'self'"],           // prevents form hijacking to external URLs
+      upgradeInsecureRequests: IS_DEV ? null : [],
     },
   },
   crossOriginEmbedderPolicy: false,   // needed for blob: report windows
@@ -306,14 +337,14 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ── Global JSON error handler ───────────────────────────────────────────────
-// Ensures unhandled Express errors return JSON, not HTML error pages
+// Ensures unhandled Express errors return JSON, not HTML error pages.
+// Logs full details server-side; sends only safe messages to the client.
 app.use((err: any, req: any, res: any, next: any) => {
   if (res.headersSent) return next(err);
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal server error";
-  console.error("[global-error-handler]", err.stack ?? err.message);
+  const status = err instanceof AppError ? err.statusCode : (err.status || err.statusCode || 500);
+  logger.error({ err, path: req.path, method: req.method }, "[global-error-handler]");
   if (req.path.startsWith("/api/")) {
-    return res.status(status).json({ message });
+    return res.status(status).json({ message: safeMsg(err) });
   }
   next(err);
 });
