@@ -37,27 +37,23 @@ RUN apk add --no-cache \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# Create a non-root user to run the app.
-# Chromium sandbox requires a real user (not root).
+# Create a non-root user BEFORE copying files so ownership is set correctly.
+# All subsequent COPY and RUN commands inherit correct ownership.
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-COPY package*.json ./
+# Switch to non-root now — npm ci and all COPYs run as appuser
+USER appuser
+
+COPY --chown=appuser:appgroup package*.json ./
 
 # Production deps only — no devDependencies in the image
 RUN npm ci --omit=dev
 
 # Copy built output from builder stage
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/shared ./shared
+COPY --chown=appuser:appgroup --from=builder /app/dist ./dist
+COPY --chown=appuser:appgroup --from=builder /app/shared ./shared
 # Note: scripts/ (DB migrations) intentionally excluded — run migrations
 # separately via: flyctl ssh console -C "node scripts/migrate.js"
-# or via a one-off Fly machine before deploy.
-
-# Lock down file ownership — appuser owns the app files
-RUN chown -R appuser:appgroup /app
-
-# Drop to non-root for all subsequent commands and at runtime
-USER appuser
 
 # Only expose the port the app actually serves on
 EXPOSE 8080
