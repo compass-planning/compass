@@ -1,15 +1,9 @@
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
-# Pin to a specific digest to prevent silent upstream changes.
-# To update: docker pull node:20-alpine && docker inspect node:20-alpine --format='{{index .RepoDigests 0}}'
-# Then replace the sha256 below with the new digest.
-FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS builder
+FROM node:22-alpine@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79993949d41cd AS builder
 
 WORKDIR /app
 
-# Copy lockfile first — layer cache busts only when dependencies change
 COPY package*.json ./
-
-# npm ci (not npm install) — enforces package-lock.json exactly, fails on drift
 RUN npm ci
 
 COPY . .
@@ -19,9 +13,7 @@ RUN echo "Cache bust: $CACHEBUST" && npm run build
 
 
 # ── Stage 2: Runner ───────────────────────────────────────────────────────────
-FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS runner
-
-WORKDIR /app
+FROM node:22-alpine@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79993949d41cd AS runner
 
 ENV NODE_ENV=production
 
@@ -37,25 +29,19 @@ RUN apk add --no-cache \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# Create a non-root user BEFORE copying files so ownership is set correctly.
-# All subsequent COPY and RUN commands inherit correct ownership.
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create non-root user and app directory with correct ownership in one step
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
+    && mkdir -p /app && chown appuser:appgroup /app
 
-# Switch to non-root now — npm ci and all COPYs run as appuser
+# Switch to non-root — all subsequent steps run as appuser
 USER appuser
+WORKDIR /app
 
 COPY --chown=appuser:appgroup package*.json ./
-
-# Production deps only — no devDependencies in the image
 RUN npm ci --omit=dev
 
-# Copy built output from builder stage
 COPY --chown=appuser:appgroup --from=builder /app/dist ./dist
 COPY --chown=appuser:appgroup --from=builder /app/shared ./shared
-# Note: scripts/ (DB migrations) intentionally excluded — run migrations
-# separately via: flyctl ssh console -C "node scripts/migrate.js"
 
-# Only expose the port the app actually serves on
 EXPOSE 8080
-
 CMD ["node", "dist/server/index.js"]
