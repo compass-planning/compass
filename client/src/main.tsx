@@ -11,7 +11,7 @@ import { registerToast } from "./lib/toast";
 import { useToast } from "./hooks/use-toast";
 
 function Root() {
-  const { user, fbUser, loading, logout } = useAuth();
+  const { user, loading, logout } = useAuth();
   const { toast: toastFn } = useToast();
 
   registerToast(({ title, description, variant }) =>
@@ -30,10 +30,8 @@ function Root() {
   );
 
   // Not authenticated → login
-  if (!user || !fbUser) return <Login />;
+  if (!user) return <Login />;
 
-  // Email not verified → show banner but still allow access
-  // Firebase handles re-sending verification emails
   return <FPApp />;
 }
 
