@@ -59,6 +59,18 @@ export const users = pgTable("users", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   trialEndsAt:        timestamp("trial_ends_at"),
   currentPeriodEnd:   timestamp("current_period_end"),
+  // ── Email verification ───────────────────────────────────────────────────
+  emailVerifiedAt:    timestamp("email_verified_at"),
+  emailVerifyCode:    text("email_verify_code"),
+  emailVerifyExpires: timestamp("email_verify_expires"),
+  // ── TOTP MFA ──────────────────────────────────────────────────────────────
+  totpSecret:         text("totp_secret"),          // base32, set when TOTP enabled
+  totpPendingSecret:  text("totp_pending_secret"),  // temp during enrollment
+  totpEnabledAt:      timestamp("totp_enabled_at"),
+  mfaRecoveryCodes:   text("mfa_recovery_codes"),   // JSON array of hashed codes
+  // ── Password reset ────────────────────────────────────────────────────────
+  resetCode:          text("reset_code"),
+  resetCodeExpires:   timestamp("reset_code_expires"),
   createdAt:    timestamp("created_at").defaultNow().notNull(),
   updatedAt:    timestamp("updated_at").defaultNow().notNull(),
 });

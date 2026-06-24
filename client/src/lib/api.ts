@@ -1,34 +1,34 @@
+/**
+ * client/src/lib/api.ts
+ * JWT-based API client. Token stored in memory (not localStorage).
+ * Reads token from auth context via getMemToken().
+ */
+
+import { getMemToken } from "./auth";
+
 const BASE = "";
 
-// Firebase token stored by auth.tsx
-function getToken(): string | null {
-  return localStorage.getItem("fb_token");
-}
+let redirectingToLogin = false;
 
 function notifyError(message: string) {
   window.dispatchEvent(new CustomEvent("api:error", { detail: { message } }));
 }
 
-// Tracks whether a 401-triggered redirect is already in progress,
-// preventing parallel requests from cascading into a redirect loop.
-let redirectingToLogin = false;
-
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
-  // If a 401 redirect is already in flight, abort immediately rather than
-  // firing more unauthenticated requests that will clear the token again.
   if (redirectingToLogin) throw new Error("Unauthorized");
 
-  const t = getToken();
-
-  // If there's no token at all, don't bother making the request.
-  // This can happen in the brief window between page load and auth state resolution.
-  if (!t) throw new Error("Unauthorized");
+  const t = getMemToken();
+  if (!t && path !== "/api/auth/login" && path !== "/api/auth/register"
+        && path !== "/api/auth/forgot" && path !== "/api/auth/reset-password"
+        && path !== "/api/auth/verify-email" && path !== "/api/auth/refresh") {
+    throw new Error("Unauthorized");
+  }
 
   const res = await fetch(`${BASE}${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${t}`,
+      ...(t ? { Authorization: `Bearer ${t}` } : {}),
       ...(opts.headers ?? {}),
     },
   });
@@ -36,8 +36,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   if (res.status === 401) {
     if (!redirectingToLogin) {
       redirectingToLogin = true;
-      localStorage.removeItem("fb_token");
-      // Small delay lets any in-flight requests settle before redirect
+      localStorage.removeItem("compass_refresh");
       setTimeout(() => { window.location.href = "/"; }, 100);
     }
     throw new Error("Unauthorized");
@@ -62,9 +61,25 @@ export const api = {
   delete: <T>(p: string)              => req<T>(p, { method: "DELETE" }),
 };
 
-// Keep for backward compat with any remaining token.set() calls
+// Public API calls that don't need auth token
+export const publicApi = {
+  post: <T>(p: string, b?: unknown): Promise<T> =>
+    fetch(`${BASE}${p}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(b),
+    }).then(async res => {
+      if (!res.ok) {
+        const b2 = await res.json().catch(() => ({}));
+        throw new Error(b2.message ?? `HTTP ${res.status}`);
+      }
+      return res.json();
+    }),
+};
+
+// Legacy compat
 export const token = {
-  get:   getToken,
-  set:   (t: string) => localStorage.setItem("fb_token", t),
-  clear: () => localStorage.removeItem("fb_token"),
+  get:   getMemToken,
+  set:   () => {},   // no-op — tokens are in memory now
+  clear: () => { localStorage.removeItem("compass_refresh"); },
 };

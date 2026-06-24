@@ -1,35 +1,44 @@
 /**
  * Login.tsx
- * Firebase auth with mandatory SMS MFA enrollment on registration.
+ * Self-hosted auth — email + password + TOTP MFA.
+ * No Firebase dependency.
+ *
+ * Stages:
+ *  login           → email + password
+ *  register        → collect details
+ *  verify-email    → enter 6-digit code from email
+ *  totp-setup      → scan QR code in authenticator app
+ *  totp-enable     → enter first TOTP code to confirm setup
+ *  recovery-codes  → display one-time recovery codes
+ *  totp-verify     → enter TOTP code on subsequent logins
+ *  totp-recover    → enter recovery code instead
+ *  forgot          → enter email for reset code
+ *  forgot-sent     → message sent
+ *  reset-password  → enter reset code + new password
  */
 
 import { useState, useRef, useEffect } from "react";
-import { Eye, EyeOff, Loader2, ArrowLeft, Check, X, Smartphone } from "lucide-react";
-import {
-  auth,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail,
-  sendEmailVerification,
-} from "../lib/firebase";
-import {
-  multiFactor,
-  PhoneAuthProvider,
-  PhoneMultiFactorGenerator,
-  RecaptchaVerifier,
-} from "firebase/auth";
-import { api } from "../lib/api";
-import { setSuppressSync } from "../lib/auth";
+import { Eye, EyeOff, Loader2, ArrowLeft, Check, X, ShieldCheck, Copy, CheckCheck } from "lucide-react";
+import { publicApi } from "../lib/api";
+import { useLoginCallback } from "../lib/auth";
+import { setMemToken } from "../lib/auth";
 
 type Stage =
   | "login"
-  | "register-details"
-  | "register-verify-email"
-  | "register-mfa-phone"
-  | "register-mfa-code"
+  | "register"
+  | "verify-email"
+  | "totp-setup"
+  | "totp-enable"
+  | "recovery-codes"
+  | "totp-verify"
+  | "totp-recover"
   | "forgot"
-  | "forgot-sent";
+  | "forgot-sent"
+  | "reset-password";
 
+const PROVINCES = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"];
+
+// ── Password strength indicator ───────────────────────────────────────────────
 function PasswordStrength({ password }: { password: string }) {
   const rules = [
     { label: "8+ characters",    ok: password.length >= 8 },
@@ -64,13 +73,10 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
-const PROVINCES = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"];
-
-// 6-digit code input component
-function CodeInput({ onComplete }: { onComplete: (code: string) => void }) {
+// ── 6-digit code input ────────────────────────────────────────────────────────
+function CodeInput({ onComplete, disabled }: { onComplete: (code: string) => void; disabled?: boolean }) {
   const [digits, setDigits] = useState(["","","","","",""]);
   const inputs = useRef<(HTMLInputElement|null)[]>([]);
-
   useEffect(() => { inputs.current[0]?.focus(); }, []);
 
   function handleInput(i: number, val: string) {
@@ -81,31 +87,31 @@ function CodeInput({ onComplete }: { onComplete: (code: string) => void }) {
     if (val && i < 5) inputs.current[i+1]?.focus();
     if (next.every(d => d)) onComplete(next.join(""));
   }
-
   function handleKey(i: number, e: React.KeyboardEvent) {
     if (e.key === "Backspace" && !digits[i] && i > 0) inputs.current[i-1]?.focus();
   }
-
   function handlePaste(e: React.ClipboardEvent) {
     const paste = e.clipboardData.getData("text").replace(/\D/g,"").slice(0,6);
     if (paste.length === 6) { setDigits(paste.split("")); onComplete(paste); }
   }
-
   return (
     <div className="flex gap-2 justify-center" onPaste={handlePaste}>
       {digits.map((d, i) => (
         <input key={i} ref={el => { inputs.current[i] = el; }}
-          type="text" inputMode="numeric" maxLength={1} value={d}
+          type="text" inputMode="numeric" maxLength={1} value={d} disabled={disabled}
           onChange={e => handleInput(i, e.target.value)}
           onKeyDown={e => handleKey(i, e)}
-          className="w-11 h-12 text-center text-xl font-bold bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-violet-500 transition-colors"
+          className="w-11 h-12 text-center text-xl font-bold bg-white border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50"
         />
       ))}
     </div>
   );
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
 export default function Login() {
+  const onLogin = useLoginCallback();
+
   const [stage, setStage]         = useState<Stage>("login");
   const [email, setEmail]         = useState("");
   const [password, setPassword]   = useState("");
@@ -114,141 +120,186 @@ export default function Login() {
   const [firmName, setFirmName]   = useState("");
   const [province, setProvince]   = useState("ON");
   const [jurisdiction, setJurisdiction] = useState<"CA"|"US">("CA");
-  const [phone, setPhone]         = useState("");
   const [showPw, setShowPw]       = useState(false);
   const [busy, setBusy]           = useState(false);
   const [error, setError]         = useState("");
 
-  // MFA enrollment state
-  const [verificationId, setVerificationId]   = useState("");
-  const [mfaSession, setMfaSession]           = useState<any>(null);
-  const recaptchaContainerId = "recaptcha-container-compass";
+  // State threaded between stages
+  const [partialToken, setPartialToken]   = useState("");  // mfaVerified: false
+  const [qrCodeUrl, setQrCodeUrl]         = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [copiedCodes, setCopiedCodes]     = useState(false);
+  const [resetEmail, setResetEmail]       = useState("");
+  const [newPassword, setNewPassword]     = useState("");
+  const [resetCode, setResetCode]         = useState("");
 
   function reset() { setError(""); }
 
-  // ── Login ────────────────────────────────────────────────────────────────────
+  // ── Login ─────────────────────────────────────────────────────────────────
   async function handleLogin() {
+    if (!email || !password) return setError("Please enter your email and password.");
     setBusy(true); reset();
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (e: any) {
-      // Firebase MFA challenge — handled by onAuthStateChanged in AuthProvider
-      if (e.code === "auth/multi-factor-auth-required") {
-        // Firebase automatically handles the MFA challenge UI
-        setError("MFA verification required — please check your phone.");
+      const data = await publicApi.post<{ accessToken: string; nextStep: string }>(
+        "/api/auth/login", { email, password }
+      );
+      setPartialToken(data.accessToken);
+      setMemToken(data.accessToken);
+      if (data.nextStep === "totp-setup") {
+        await startTotpSetup(data.accessToken);
       } else {
-        const msg = e.code === "auth/invalid-credential" ? "Invalid email or password"
-          : e.code === "auth/too-many-requests" ? "Too many attempts. Try again later."
-          : e.message;
-        setError(msg);
+        setStage("totp-verify");
       }
+    } catch (e: any) {
+      setError(e.message);
     } finally { setBusy(false); }
   }
 
-  // ── Register step 1: collect details ─────────────────────────────────────────
-  async function handleRegisterDetails() {
+  // ── Register ──────────────────────────────────────────────────────────────
+  async function handleRegister() {
     if (!firstName || !lastName || !email || !password)
       return setError("Please fill in all required fields.");
     setBusy(true); reset();
     try {
-      setSuppressSync(true); // Prevent auth loop during registration
-      // Create Firebase account
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-
-      // Send verification email (required before MFA enrollment)
-      
-      await sendEmailVerification(cred.user);
-
-      // Start MFA session (will be used after email verification)
-      const mfaUser = multiFactor(cred.user);
-      const session = await mfaUser.getSession();
-      setMfaSession({ session, user: cred.user });
-      setStage("register-verify-email");
-    } catch (e: any) {
-      const msg = e.code === "auth/email-already-in-use" ? "An account with this email already exists."
-        : e.code === "auth/weak-password" ? "Password must be at least 6 characters."
-        : e.message;
-      setError(msg);
-    } finally { setBusy(false); }
-  }
-
-  // ── Register step 2: send SMS to phone ───────────────────────────────────────
-  async function handleSendSms() {
-    if (!phone) return setError("Please enter your mobile number.");
-    // Normalize to E.164 format
-    let normalized = phone.replace(/[\s\-\(\)\.]/g, "");
-    if (!normalized.startsWith("+")) {
-      normalized = "+" + (normalized.startsWith("1") ? normalized : "1" + normalized);
-    }
-    setBusy(true); reset();
-    try {
-      // Use normalized phone for Firebase
-      const phoneForFirebase = normalized;
-      // Init reCAPTCHA — clear any existing instance first
-      let container = document.getElementById(recaptchaContainerId);
-      if (!container) {
-        container = document.createElement("div");
-        container.id = recaptchaContainerId;
-        document.body.appendChild(container);
-      }
-      // Clear previous reCAPTCHA if any
-      container.innerHTML = "";
-      const verifier = new RecaptchaVerifier(auth, container, { size: "invisible" });
-      await verifier.render();
-
-      const provider = new PhoneAuthProvider(auth);
-      const vid = await provider.verifyPhoneNumber(
-        { phoneNumber: phoneForFirebase, session: mfaSession.session },
-        verifier
-      );
-      setVerificationId(vid);
-      setStage("register-mfa-code");
-    } catch (e: any) {
-      const msg = e.code === "auth/invalid-phone-number"
-        ? "Invalid phone number. Include country code e.g. +1 416 555 0100"
-        : e.message;
-      setError(msg);
-      recaptchaVerifier.current = null;
-    } finally { setBusy(false); }
-  }
-
-  // ── Register step 3: verify SMS code + complete enrollment ───────────────────
-  async function handleVerifyCode(code: string) {
-    setBusy(true); reset();
-    try {
-      const cred = PhoneAuthProvider.credential(verificationId, code);
-      const assertion = PhoneMultiFactorGenerator.assertion(cred);
-      const mfaUser = multiFactor(mfaSession.user);
-      await mfaUser.enroll(assertion, "Mobile phone");
-
-      // Create Postgres record
-      const idToken = await mfaSession.user.getIdToken(true);
-      await api.post("/api/auth/register", {
-        idToken, firstName, lastName,
-        firmName: firmName || undefined,
-        jurisdiction, province,
+      await publicApi.post("/api/auth/register", {
+        email, password, firstName, lastName,
+        firmName: firmName || undefined, jurisdiction, province,
       });
-      setSuppressSync(false); // Allow sync now that Postgres record exists
-      window.location.reload(); // Trigger fresh sync after registration complete
+      setStage("verify-email");
     } catch (e: any) {
-      setSuppressSync(false); // Reset on error
-      const msg = e.code === "auth/invalid-verification-code" ? "Invalid code. Please try again."
-        : e.message;
-      setError(msg);
+      setError(e.message);
     } finally { setBusy(false); }
   }
 
-  // ── Forgot password ───────────────────────────────────────────────────────────
-  async function handleForgot() {
-    if (!email) return setError("Enter your email address.");
+  // ── Verify email ──────────────────────────────────────────────────────────
+  async function handleVerifyEmail(code: string) {
     setBusy(true); reset();
     try {
-      await sendPasswordResetEmail(auth, email);
-    } catch {}
-    finally { setBusy(false); setStage("forgot-sent"); }
+      const data = await publicApi.post<{ accessToken: string; nextStep: string }>(
+        "/api/auth/verify-email", { email, code }
+      );
+      setPartialToken(data.accessToken);
+      setMemToken(data.accessToken);
+      await startTotpSetup(data.accessToken);
+    } catch (e: any) {
+      setError(e.message);
+    } finally { setBusy(false); }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Begin TOTP setup ──────────────────────────────────────────────────────
+  async function startTotpSetup(token: string) {
+    const res = await fetch("/api/auth/totp/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    setQrCodeUrl(data.qrCodeDataUrl);
+    setStage("totp-setup");
+  }
+
+  // ── Confirm TOTP setup with first code ────────────────────────────────────
+  async function handleTotpEnable(code: string) {
+    setBusy(true); reset();
+    try {
+      const res = await fetch("/api/auth/totp/enable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${partialToken}` },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      setRecoveryCodes(data.recoveryCodes);
+      onLogin(data.accessToken, data.refreshToken);
+      setStage("recovery-codes");
+    } catch (e: any) {
+      setError(e.message);
+    } finally { setBusy(false); }
+  }
+
+  // ── Verify TOTP on login ──────────────────────────────────────────────────
+  async function handleTotpVerify(code: string) {
+    setBusy(true); reset();
+    try {
+      const res = await fetch("/api/auth/totp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${partialToken}` },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      onLogin(data.accessToken, data.refreshToken);
+    } catch (e: any) {
+      setError(e.message);
+    } finally { setBusy(false); }
+  }
+
+  // ── Use recovery code ─────────────────────────────────────────────────────
+  async function handleTotpRecover() {
+    if (!resetCode) return setError("Enter your recovery code.");
+    setBusy(true); reset();
+    try {
+      const res = await fetch("/api/auth/totp/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${partialToken}` },
+        body: JSON.stringify({ code: resetCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      onLogin(data.accessToken, data.refreshToken);
+      if (data.codesRemaining <= 2) {
+        setError(`Warning: only ${data.codesRemaining} recovery code(s) remaining.`);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally { setBusy(false); }
+  }
+
+  // ── Forgot password ───────────────────────────────────────────────────────
+  async function handleForgot() {
+    if (!resetEmail) return setError("Enter your email address.");
+    setBusy(true); reset();
+    try {
+      await publicApi.post("/api/auth/forgot", { email: resetEmail });
+      setStage("forgot-sent");
+    } catch {} finally { setBusy(false); }
+  }
+
+  // ── Reset password ────────────────────────────────────────────────────────
+  async function handleResetPassword() {
+    if (!resetCode || !newPassword) return setError("Please fill in all fields.");
+    setBusy(true); reset();
+    try {
+      await publicApi.post("/api/auth/reset-password", {
+        email: resetEmail, code: resetCode, password: newPassword,
+      });
+      setStage("login");
+      setError("Password reset successfully. You can now sign in.");
+    } catch (e: any) {
+      setError(e.message);
+    } finally { setBusy(false); }
+  }
+
+  function copyRecoveryCodes() {
+    navigator.clipboard.writeText(recoveryCodes.join("\n"));
+    setCopiedCodes(true);
+    setTimeout(() => setCopiedCodes(false), 2000);
+  }
+
+  // ── Shared input class ────────────────────────────────────────────────────
+  const inp = "w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all";
+  const btn = "w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 hover:from-violet-500 hover:to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50";
+
+  function ErrorBox() {
+    if (!error) return null;
+    return (
+      <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+        <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+        <p className="text-red-600 text-sm">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-violet-50/30 to-purple-50/20">
 
@@ -301,10 +352,10 @@ export default function Login() {
 
           <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
 
-            {/* Tab switcher — only for login/register */}
-            {(stage === "login" || stage === "register-details") && (
+            {/* Tab switcher */}
+            {(stage === "login" || stage === "register") && (
               <div className="flex bg-slate-50 border-b border-slate-100">
-                {(["login", "register-details"] as const).map(s => (
+                {(["login", "register"] as const).map(s => (
                   <button key={s} onClick={() => { setStage(s); reset(); }}
                     className={`flex-1 py-3.5 text-sm font-semibold transition-colors ${
                       stage === s ? "bg-white text-violet-600 border-b-2 border-violet-500" : "text-slate-500 hover:text-slate-700"
@@ -324,57 +375,49 @@ export default function Login() {
                     <h2 className="text-2xl font-bold text-slate-900 mb-1">Welcome back</h2>
                     <p className="text-sm text-slate-500">Sign in to your Compass Planning account.</p>
                   </div>
-                  <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
-                    autoComplete="email"
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                  <input type="email" placeholder="Email address" value={email}
+                    onChange={e => setEmail(e.target.value)} autoComplete="email" className={inp} />
                   <div className="relative">
-                    <input type={showPw ? "text" : "password"} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+                    <input type={showPw ? "text" : "password"} placeholder="Password"
+                      value={password} onChange={e => setPassword(e.target.value)}
                       autoComplete="current-password"
-                      onKeyDown={e => e.key === "Enter" && handleLogin()}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                      onKeyDown={e => e.key === "Enter" && handleLogin()} className={`${inp} pr-10`} />
                     <button type="button" onClick={() => setShowPw(s => !s)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                       {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  {error && <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5"><X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /><p className="text-red-600 text-sm">{error}</p></div>}
-                  <button onClick={handleLogin} disabled={busy}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 hover:from-violet-500 hover:to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
+                  <ErrorBox />
+                  <button onClick={handleLogin} disabled={busy} className={btn}>
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     {busy ? "Signing in…" : "Sign In"}
                   </button>
-                  <button onClick={() => { setStage("forgot"); reset(); }}
+                  <button onClick={() => { setStage("forgot"); setResetEmail(email); reset(); }}
                     className="w-full text-center text-xs text-slate-400 hover:text-violet-600 transition-colors">
                     Forgot password?
                   </button>
                 </div>
               )}
 
-              {/* ── Register: account details ── */}
-              {stage === "register-details" && (
+              {/* ── Register ── */}
+              {stage === "register" && (
                 <div className="space-y-4">
                   <div>
                     <h2 className="text-2xl font-bold text-slate-900 mb-1">Create account</h2>
                     <p className="text-sm text-slate-500">Start your 14-day free trial — no credit card required.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
-                    <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                    <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} className={inp} />
+                    <input placeholder="Last name"  value={lastName}  onChange={e => setLastName(e.target.value)}  className={inp} />
                   </div>
-                  <input placeholder="Firm name (optional)" value={firmName} onChange={e => setFirmName(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
-                  <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
-                    autoComplete="email"
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                  <input placeholder="Firm name (optional)" value={firmName} onChange={e => setFirmName(e.target.value)} className={inp} />
+                  <input type="email" placeholder="Email address" value={email}
+                    onChange={e => setEmail(e.target.value)} autoComplete="email" className={inp} />
                   <div className="grid grid-cols-2 gap-3">
-                    <select value={province} onChange={e => setProvince(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all">
+                    <select value={province} onChange={e => setProvince(e.target.value)} className={inp}>
                       {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
-                    <select value={jurisdiction} onChange={e => setJurisdiction(e.target.value as "CA"|"US")}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all">
+                    <select value={jurisdiction} onChange={e => setJurisdiction(e.target.value as "CA"|"US")} className={inp}>
                       <option value="CA">🇨🇦 Canada</option>
                       <option value="US">🇺🇸 United States</option>
                     </select>
@@ -382,119 +425,154 @@ export default function Login() {
                   <div className="relative">
                     <input type={showPw ? "text" : "password"} placeholder="Password (min 8 characters)"
                       value={password} onChange={e => setPassword(e.target.value)}
-                      autoComplete="new-password"
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
+                      autoComplete="new-password" className={`${inp} pr-10`} />
                     <button type="button" onClick={() => setShowPw(s => !s)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                       {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                   <PasswordStrength password={password} />
-                  {error && <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5"><X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /><p className="text-red-600 text-sm">{error}</p></div>}
-                  <button onClick={handleRegisterDetails} disabled={busy}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 hover:from-violet-500 hover:to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
+                  <ErrorBox />
+                  <button onClick={handleRegister} disabled={busy} className={btn}>
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     {busy ? "Creating account…" : "Continue →"}
                   </button>
-                  <p className="text-center text-xs text-slate-400">Next: set up two-factor authentication</p>
+                  <p className="text-center text-xs text-slate-400">Next: verify email, then set up authenticator app</p>
                 </div>
               )}
 
-              {/* ── Register: verify email ── */}
-              {stage === "register-verify-email" && (
-                <div className="space-y-5 text-center">
-                  <div className="w-14 h-14 bg-violet-100 rounded-full flex items-center justify-center mx-auto">
-                    <svg className="w-7 h-7 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-900">Verify your email</h2>
-                  <p className="text-sm text-slate-500">We sent a verification link to <strong>{email}</strong>. Click it, then come back here.</p>
-                  {error && <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 text-left"><X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /><p className="text-red-600 text-sm">{error}</p></div>}
-                  <button onClick={async () => {
-                    setBusy(true); reset();
-                    try {
-                      await mfaSession.user.reload();
-                      if (!mfaSession.user.emailVerified) {
-                        setError("Email not verified yet. Check your inbox and click the link.");
-                        return;
-                      }
-                      // Refresh MFA session after email verification
-                      const mfaUser = multiFactor(mfaSession.user);
-                      const session = await mfaUser.getSession();
-                      setMfaSession({ ...mfaSession, session });
-                      setStage("register-mfa-phone");
-                    } catch (e: any) { setError(e.message); }
-                    finally { setBusy(false); }
-                  }} disabled={busy}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-50">
-                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    I verified my email →
-                  </button>
-                  <button onClick={async () => {
-                    
-                    await sendEmailVerification(mfaSession.user);
-                    setError("Verification email resent.");
-                  }} className="text-xs text-slate-400 hover:text-violet-600 transition-colors">
-                    Resend verification email
-                  </button>
-                </div>
-              )}
-
-              {/* ── Register: enter phone ── */}
-              {stage === "register-mfa-phone" && (
+              {/* ── Verify email ── */}
+              {stage === "verify-email" && (
                 <div className="space-y-5">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="text-center">
+                    <div className="w-14 h-14 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-7 h-7 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-slate-900">Verify your email</h2>
+                    <p className="text-sm text-slate-500 mt-1">Enter the 6-digit code sent to <strong>{email}</strong></p>
+                  </div>
+                  <CodeInput onComplete={handleVerifyEmail} disabled={busy} />
+                  {busy && <div className="flex items-center justify-center gap-2 text-violet-600 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</div>}
+                  <ErrorBox />
+                  <p className="text-center text-xs text-slate-400">Code expires in 15 minutes. Check your spam folder if needed.</p>
+                </div>
+              )}
+
+              {/* ── TOTP setup — scan QR ── */}
+              {stage === "totp-setup" && (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-violet-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Smartphone className="w-5 h-5 text-violet-600" />
+                      <ShieldCheck className="w-5 h-5 text-violet-600" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold text-slate-900">Set up two-factor authentication</h2>
-                      <p className="text-sm text-slate-500">Required for account security.</p>
+                      <h2 className="text-xl font-bold text-slate-900">Set up authenticator app</h2>
+                      <p className="text-sm text-slate-500">Scan this QR code with Google Authenticator, Authy, or 1Password.</p>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Mobile number</label>
-                    <input type="tel" placeholder="+1 416 555 0100 (include +1)" value={phone} onChange={e => setPhone(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleSendSms()}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
-                    <p className="text-xs text-slate-400 mt-1.5">Must include country code in E.164 format e.g. <strong>+16137958837</strong></p>
-                  </div>
-                  {error && <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5"><X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /><p className="text-red-600 text-sm">{error}</p></div>}
-                  <button onClick={handleSendSms} disabled={busy}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 hover:from-violet-500 hover:to-purple-400 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50">
-                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    {busy ? "Sending code…" : "Send verification code"}
+                  {qrCodeUrl && (
+                    <div className="flex justify-center">
+                      <div className="p-3 bg-white border-2 border-violet-200 rounded-2xl">
+                        <img src={qrCodeUrl} alt="TOTP QR Code" className="w-48 h-48" />
+                      </div>
+                    </div>
+                  )}
+                  <button onClick={() => setStage("totp-enable")} className={btn}>
+                    I've scanned the code →
                   </button>
                 </div>
               )}
 
-              {/* ── Register: enter SMS code ── */}
-              {stage === "register-mfa-code" && (
+              {/* ── TOTP enable — confirm with first code ── */}
+              {stage === "totp-enable" && (
                 <div className="space-y-5">
+                  <button onClick={() => setStage("totp-setup")}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back
+                  </button>
                   <div>
-                    <button onClick={() => { setStage("register-mfa-phone"); reset(); }}
-                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 mb-4">
-                      <ArrowLeft className="w-3.5 h-3.5" /> Back
-                    </button>
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 bg-violet-100 rounded-full flex items-center justify-center flex-shrink-0">
-                        <Smartphone className="w-5 h-5 text-violet-600" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-900">Enter the code</h2>
-                        <p className="text-sm text-slate-500">Sent to <strong>{phone}</strong></p>
-                      </div>
+                    <h2 className="text-xl font-bold text-slate-900">Enter the 6-digit code</h2>
+                    <p className="text-sm text-slate-500 mt-1">Enter the code from your authenticator app to confirm setup.</p>
+                  </div>
+                  <CodeInput onComplete={handleTotpEnable} disabled={busy} />
+                  {busy && <div className="flex items-center justify-center gap-2 text-violet-600 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</div>}
+                  <ErrorBox />
+                </div>
+              )}
+
+              {/* ── Recovery codes ── */}
+              {stage === "recovery-codes" && (
+                <div className="space-y-5">
+                  <div className="text-center">
+                    <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <Check className="w-7 h-7 text-emerald-600" />
+                    </div>
+                    <h2 className="text-xl font-bold text-slate-900">Save your recovery codes</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Store these somewhere safe. Each code can only be used once if you lose access to your authenticator app.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      {recoveryCodes.map((c, i) => (
+                        <div key={i} className="font-mono text-sm text-slate-700 bg-white border border-slate-100 rounded-lg px-3 py-1.5 text-center">
+                          {c}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <CodeInput onComplete={handleVerifyCode} />
-                  {error && <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5"><X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /><p className="text-red-600 text-sm">{error}</p></div>}
-                  {busy && (
-                    <div className="flex items-center justify-center gap-2 text-violet-600 text-sm">
-                      <Loader2 className="w-4 h-4 animate-spin" /> Verifying…
+                  <button onClick={copyRecoveryCodes}
+                    className="w-full flex items-center justify-center gap-2 border-2 border-violet-200 text-violet-600 font-semibold py-2.5 rounded-xl text-sm hover:bg-violet-50 transition-colors">
+                    {copiedCodes ? <CheckCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copiedCodes ? "Copied!" : "Copy all codes"}
+                  </button>
+                  <p className="text-center text-xs text-slate-400">
+                    You're all set. You'll be taken to the app automatically.
+                  </p>
+                </div>
+              )}
+
+              {/* ── TOTP verify on login ── */}
+              {stage === "totp-verify" && (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-violet-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <ShieldCheck className="w-5 h-5 text-violet-600" />
                     </div>
-                  )}
-                  <button onClick={() => { setStage("register-mfa-phone"); reset(); }}
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900">Two-factor authentication</h2>
+                      <p className="text-sm text-slate-500">Enter the 6-digit code from your authenticator app.</p>
+                    </div>
+                  </div>
+                  <CodeInput onComplete={handleTotpVerify} disabled={busy} />
+                  {busy && <div className="flex items-center justify-center gap-2 text-violet-600 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</div>}
+                  <ErrorBox />
+                  <button onClick={() => { setStage("totp-recover"); reset(); setResetCode(""); }}
                     className="w-full text-center text-xs text-slate-400 hover:text-violet-600 transition-colors">
-                    Didn't receive a code? Try again
+                    Use a recovery code instead
+                  </button>
+                </div>
+              )}
+
+              {/* ── Recovery code ── */}
+              {stage === "totp-recover" && (
+                <div className="space-y-5">
+                  <button onClick={() => { setStage("totp-verify"); reset(); }}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back
+                  </button>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Recovery code</h2>
+                    <p className="text-sm text-slate-500 mt-1">Enter one of your saved recovery codes.</p>
+                  </div>
+                  <input placeholder="XXXX-XXXX-XXXX" value={resetCode}
+                    onChange={e => setResetCode(e.target.value)} className={inp} />
+                  <ErrorBox />
+                  <button onClick={handleTotpRecover} disabled={busy} className={btn}>
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {busy ? "Verifying…" : "Use recovery code"}
                   </button>
                 </div>
               )}
@@ -508,30 +586,63 @@ export default function Login() {
                   </button>
                   <div>
                     <h2 className="text-2xl font-bold text-slate-900 mb-1">Reset password</h2>
-                    <p className="text-sm text-slate-500">We'll send a reset link to your email.</p>
+                    <p className="text-sm text-slate-500">We'll email you a 6-digit reset code.</p>
                   </div>
-                  <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 transition-all" />
-                  {error && <p className="text-red-500 text-sm">{error}</p>}
-                  <button onClick={handleForgot} disabled={busy}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-50">
+                  <input type="email" placeholder="Email address" value={resetEmail}
+                    onChange={e => setResetEmail(e.target.value)} className={inp} />
+                  <ErrorBox />
+                  <button onClick={handleForgot} disabled={busy} className={btn}>
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    Send reset link
+                    Send reset code
                   </button>
                 </div>
               )}
 
               {/* ── Forgot sent ── */}
               {stage === "forgot-sent" && (
-                <div className="text-center space-y-4">
-                  <div className="w-12 h-12 bg-violet-100 rounded-full flex items-center justify-center mx-auto">
-                    <Check className="w-6 h-6 text-violet-600" />
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <Check className="w-6 h-6 text-violet-600" />
+                    </div>
+                    <h2 className="text-xl font-bold text-slate-900">Check your email</h2>
+                    <p className="text-slate-500 text-sm mt-2">
+                      If <strong>{resetEmail}</strong> has an account, a reset code has been sent.
+                    </p>
                   </div>
-                  <h2 className="text-xl font-bold text-slate-900">Check your email</h2>
-                  <p className="text-slate-500 text-sm">If <strong>{email}</strong> has an account, a password reset link has been sent.</p>
+                  <button onClick={() => setStage("reset-password")} className={btn}>
+                    Enter reset code →
+                  </button>
                   <button onClick={() => { setStage("login"); reset(); }}
-                    className="text-sm text-violet-600 hover:text-violet-700 font-medium">
+                    className="w-full text-center text-xs text-slate-400 hover:text-violet-600 transition-colors">
                     Back to sign in
+                  </button>
+                </div>
+              )}
+
+              {/* ── Reset password ── */}
+              {stage === "reset-password" && (
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-1">Set new password</h2>
+                    <p className="text-sm text-slate-500">Enter the code from your email and choose a new password.</p>
+                  </div>
+                  <input placeholder="6-digit code from email" value={resetCode}
+                    onChange={e => setResetCode(e.target.value)} className={inp} maxLength={6} />
+                  <div className="relative">
+                    <input type={showPw ? "text" : "password"} placeholder="New password"
+                      value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                      className={`${inp} pr-10`} />
+                    <button type="button" onClick={() => setShowPw(s => !s)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <PasswordStrength password={newPassword} />
+                  <ErrorBox />
+                  <button onClick={handleResetPassword} disabled={busy} className={btn}>
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Reset password
                   </button>
                 </div>
               )}
@@ -545,6 +656,3 @@ export default function Login() {
     </div>
   );
 }
-
-
-

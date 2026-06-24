@@ -1,19 +1,20 @@
 /**
  * server/auth/index.ts
- * Firebase-based auth middleware.
- * Verifies Firebase ID tokens on each request.
- * Users are looked up by firebase_uid in the users table.
+ * JWT-based auth middleware.
+ * Replaces Firebase token verification entirely.
+ *
+ * Tokens are signed JWTs in the Authorization: Bearer header.
+ * mfaVerified must be true for full access — prevents partial-auth bypass.
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { getDb } from "../db/index.js";
-import { users } from "../../shared/schema.js";
-import { eq } from "drizzle-orm";
-import { verifyFirebaseToken } from "../lib/firebaseAdmin.js";
+import { getDb }             from "../db/index.js";
+import { users }             from "../../shared/schema.js";
+import { eq }                from "drizzle-orm";
+import { verifyAccessToken } from "../lib/jwt.js";
 
 export interface AuthRequest extends Request {
-  userId?:          number;
-  firebaseUid?:     string;
+  userId?:           number;
   userJurisdiction?: "CA" | "US";
 }
 
@@ -27,32 +28,21 @@ export async function isAuthenticated(
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
-  const idToken = header.slice(7);
+
   try {
-    const decoded = await verifyFirebaseToken(idToken);
-    req.firebaseUid = decoded.uid;
+    const payload = verifyAccessToken(header.slice(7));
 
-    // Look up our internal user record
-    let [u] = await getDb("CA").select({
-      id: users.id, jurisdiction: users.jurisdiction,
-    }).from(users).where(eq((users as any).firebaseUid, decoded.uid)).limit(1);
-
-    if (!u) {
-      [u] = await getDb("US").select({
-        id: users.id, jurisdiction: users.jurisdiction,
-      }).from(users).where(eq((users as any).firebaseUid, decoded.uid)).limit(1);
-    }
-
-    if (!u) {
-      res.status(401).json({ message: "User not found. Please register." });
+    // Require TOTP step to have been completed
+    if (!payload.mfaVerified) {
+      res.status(401).json({ message: "MFA verification required" });
       return;
     }
 
-    req.userId           = u.id;
-    req.userJurisdiction = (u.jurisdiction ?? "CA") as "CA" | "US";
+    req.userId           = payload.userId;
+    req.userJurisdiction = payload.jurisdiction;
     next();
-  } catch (e: any) {
-    res.status(401).json({ message: "Invalid or expired token" });
+  } catch {
+    res.status(401).json({ message: "Invalid or expired session" });
   }
 }
 
@@ -70,6 +60,8 @@ export async function getUser(userId: number, jurisdiction: "CA" | "US" = "CA") 
     currentPeriodEnd:   users.currentPeriodEnd,
     mustResetPassword:  users.mustResetPassword,
     province:           users.province,
+    totpEnabledAt:      users.totpEnabledAt,
+    emailVerifiedAt:    users.emailVerifiedAt,
   }).from(users).where(eq(users.id, userId)).limit(1);
   return u ?? null;
 }

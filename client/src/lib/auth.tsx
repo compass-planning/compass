@@ -1,18 +1,18 @@
 /**
  * client/src/lib/auth.tsx
- * Firebase-based auth context.
- * Firebase handles all auth UI/logic; we sync with our Postgres backend.
+ * Self-hosted JWT auth context. No Firebase dependency.
+ *
+ * Token flow:
+ *  - accessToken  (8h)  stored in memory (never localStorage — XSS safe)
+ *  - refreshToken (30d) stored in localStorage (used only to get new access tokens)
+ *
+ * Login flow:
+ *  1. POST /api/auth/login → { accessToken, nextStep: "totp-verify" | "totp-setup" }
+ *  2. POST /api/auth/totp/verify or /totp/enable → { accessToken, refreshToken }
+ *  3. Full access token issued — app loads
  */
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import {
-  auth,
-  onAuthStateChanged,
-  signOut,
-  type FirebaseUser,
-} from "./firebase";
-import { onIdTokenChanged } from "firebase/auth";
-import { api } from "./api";
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 
 export interface User {
   id:                 number;
@@ -27,121 +27,127 @@ export interface User {
   trialEndsAt?:       string | null;
   currentPeriodEnd?:  string | null;
   mustResetPassword?: boolean | null;
-  emailVerified?:     boolean;  // from Firebase
+  totpEnabledAt?:     string | null;
+  emailVerifiedAt?:   string | null;
 }
 
 interface AuthCtx {
-  user:    User | null;
-  fbUser:  FirebaseUser | null;
-  loading: boolean;
-  logout:  () => Promise<void>;
-  refresh: () => Promise<void>;
+  user:         User | null;
+  loading:      boolean;
+  accessToken:  string | null;
+  setAccessToken: (token: string | null) => void;
+  logout:       () => void;
+  refresh:      () => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx>({
-  user: null, fbUser: null, loading: true,
-  logout: async () => {}, refresh: async () => {},
+  user: null, loading: true, accessToken: null,
+  setAccessToken: () => {}, logout: () => {}, refresh: async () => {},
 });
 
-// Set this to true during registration to prevent premature sync
-export function setSuppressSync(val: boolean) { sessionStorage.setItem("suppressSync", val ? "1" : ""); }
+// In-memory token store — never written to localStorage (XSS protection)
+let _memToken: string | null = null;
+
+export function getMemToken(): string | null { return _memToken; }
+export function setMemToken(t: string | null) { _memToken = t; }
+
+const REFRESH_KEY = "compass_refresh";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,    setUser]    = useState<User | null>(null);
-  const [fbUser,  setFbUser]  = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessToken, _setAccessToken] = useState<string | null>(null);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  async function syncUser(firebaseUser: FirebaseUser) {
+  function setAccessToken(token: string | null) {
+    _memToken = token;
+    _setAccessToken(token);
+  }
+
+  async function fetchUser(token: string): Promise<User | null> {
     try {
-      const idToken = await firebaseUser.getIdToken(true); // force refresh
-      localStorage.setItem("fb_token", idToken);
-      
-      const profile = await api.get<User>("/api/auth/me");
-      setUser({ ...profile, emailVerified: firebaseUser.emailVerified });
-    } catch (e: any) {
-      const msg = e?.message ?? "";
-      if (msg.includes("429") || msg.includes("Too many")) {
-        // Rate limited — keep existing state, retry in 30s
-        console.warn("[auth] Rate limited — will retry");
-        setTimeout(() => syncUser(firebaseUser), 30000);
-        return;
-      }
-      if (msg.includes("401") || msg.includes("Unauthorized") || msg.includes("not found")) {
-        // No Postgres record — user needs to complete registration
-        // Don't loop — just clear so they go back to login
-        setUser(null);
-        localStorage.removeItem("fb_token");
-        return;
-      }
-      setUser(null);
-      localStorage.removeItem("fb_token");
-    }
+      const res = await fetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      return res.json();
+    } catch { return null; }
+  }
+
+  async function doRefresh(): Promise<string | null> {
+    const rt = localStorage.getItem(REFRESH_KEY);
+    if (!rt) return null;
+    try {
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!res.ok) { localStorage.removeItem(REFRESH_KEY); return null; }
+      const { accessToken: at } = await res.json();
+      return at;
+    } catch { return null; }
   }
 
   async function refresh() {
-    if (fbUser) await syncUser(fbUser);
+    const at = await doRefresh();
+    if (at) {
+      setAccessToken(at);
+      const u = await fetchUser(at);
+      setUser(u);
+      scheduleRefresh();
+    } else {
+      logout();
+    }
   }
 
+  function scheduleRefresh() {
+    clearTimeout(refreshTimer.current);
+    // Refresh 10 minutes before the 8h token expires
+    refreshTimer.current = setTimeout(refresh, (8 * 60 - 10) * 60 * 1000);
+  }
+
+  // On mount — attempt silent re-auth from refresh token
   useEffect(() => {
-    let debounceTimer: ReturnType<typeof setTimeout>;
-    // onIdTokenChanged fires on sign-in AND on every silent token refresh (~1hr),
-    // keeping localStorage always current without manual polling.
-    const unsub = onIdTokenChanged(auth, async (firebaseUser) => {
-      setFbUser(firebaseUser);
-
-      // Write token to localStorage IMMEDIATELY so any in-flight API requests
-      // have a valid token before the debounced syncUser completes.
-      // This prevents the 401 cascade caused by the 800ms debounce delay.
-      if (firebaseUser) {
-        const freshToken = await firebaseUser.getIdToken();
-        localStorage.setItem("fb_token", freshToken);
-      } else {
-        localStorage.removeItem("fb_token");
+    (async () => {
+      const at = await doRefresh();
+      if (at) {
+        setAccessToken(at);
+        const u = await fetchUser(at);
+        setUser(u);
+        scheduleRefresh();
       }
-
-      // Debounce the heavier syncUser (Postgres lookup) — Firebase fires
-      // multiple events during MFA enrollment
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(async () => {
-        if (sessionStorage.getItem("suppressSync")) {
-          setLoading(false);
-          return; // Registration in progress — don't sync yet
-        }
-        if (firebaseUser) {
-          await syncUser(firebaseUser);
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      }, 800);
-    });
-    return () => { unsub(); clearTimeout(debounceTimer); };
+      setLoading(false);
+    })();
+    return () => clearTimeout(refreshTimer.current);
   }, []);
 
-  // Refresh token before it expires (Firebase tokens last 1hr)
-  useEffect(() => {
-    if (!fbUser) return;
-    const interval = setInterval(async () => {
-      const token = await fbUser.getIdToken(true);
-      localStorage.setItem("fb_token", token);
-    }, 50 * 60 * 1000); // refresh every 50 minutes
-    return () => clearInterval(interval);
-  }, [fbUser]);
-
-  async function logout() {
-    await signOut(auth);
-    localStorage.removeItem("fb_token");
+  function logout() {
+    setAccessToken(null);
     setUser(null);
-    setFbUser(null);
+    localStorage.removeItem(REFRESH_KEY);
+    clearTimeout(refreshTimer.current);
+  }
+
+  // Called by Login.tsx after successful TOTP verification
+  function onLogin(at: string, rt?: string | null) {
+    setAccessToken(at);
+    if (rt) localStorage.setItem(REFRESH_KEY, rt);
+    fetchUser(at).then(u => setUser(u));
+    scheduleRefresh();
   }
 
   return (
-    <Ctx.Provider value={{ user, fbUser, loading, logout, refresh }}>
-      {children}
+    <Ctx.Provider value={{ user, loading, accessToken, setAccessToken, logout, refresh }}>
+      <LoginCallbackCtx.Provider value={onLogin}>
+        {children}
+      </LoginCallbackCtx.Provider>
     </Ctx.Provider>
   );
 }
 
-export function useAuth() { return useContext(Ctx); }
+// Separate context for the login callback so Login.tsx can call it
+const LoginCallbackCtx = createContext<(at: string, rt?: string | null) => void>(() => {});
 
-
+export function useAuth()          { return useContext(Ctx); }
+export function useLoginCallback() { return useContext(LoginCallbackCtx); }
