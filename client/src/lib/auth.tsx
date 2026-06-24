@@ -84,11 +84,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout>;
-    // onIdTokenChanged fires on sign-in AND whenever Firebase silently refreshes
-    // the token (~every hour), keeping localStorage always current.
-    const unsub = onIdTokenChanged(auth, (firebaseUser) => {
+    // onIdTokenChanged fires on sign-in AND on every silent token refresh (~1hr),
+    // keeping localStorage always current without manual polling.
+    const unsub = onIdTokenChanged(auth, async (firebaseUser) => {
       setFbUser(firebaseUser);
-      // Debounce — Firebase fires multiple events during MFA enrollment
+
+      // Write token to localStorage IMMEDIATELY so any in-flight API requests
+      // have a valid token before the debounced syncUser completes.
+      // This prevents the 401 cascade caused by the 800ms debounce delay.
+      if (firebaseUser) {
+        const freshToken = await firebaseUser.getIdToken();
+        localStorage.setItem("fb_token", freshToken);
+      } else {
+        localStorage.removeItem("fb_token");
+      }
+
+      // Debounce the heavier syncUser (Postgres lookup) — Firebase fires
+      // multiple events during MFA enrollment
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
         if (sessionStorage.getItem("suppressSync")) {
@@ -99,7 +111,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await syncUser(firebaseUser);
         } else {
           setUser(null);
-          localStorage.removeItem("fb_token");
         }
         setLoading(false);
       }, 800);
