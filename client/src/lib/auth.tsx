@@ -11,6 +11,7 @@ import {
   signOut,
   type FirebaseUser,
 } from "./firebase";
+import { onIdTokenChanged } from "firebase/auth";
 import { api } from "./api";
 
 export interface User {
@@ -83,7 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout>;
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+    // onIdTokenChanged fires on sign-in AND whenever Firebase silently refreshes
+    // the token (~every hour), keeping localStorage always current.
+    const unsub = onIdTokenChanged(auth, (firebaseUser) => {
       setFbUser(firebaseUser);
       // Debounce — Firebase fires multiple events during MFA enrollment
       clearTimeout(debounceTimer);
