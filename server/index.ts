@@ -172,7 +172,7 @@ app.set("trust proxy", 1); // Required for rate limiting behind Fly.io proxy
 // scriptSrc: no unsafe-inline or unsafe-eval in production.
 // Vite's built output uses external <script type="module"> files only — no
 // inline scripts needed. unsafe-eval was a dev-HMR artifact; drop it in prod.
-// Firebase Auth and reCAPTCHA load scripts from gstatic/google — allowed explicitly.
+// Scripts loaded from gstatic/google for reCAPTCHA
 // styleSrc keeps unsafe-inline because CSS-in-JS (Tailwind) injects style tags;
 // removing it requires a nonce pipeline that isn't worth the complexity here.
 const IS_DEV = process.env.NODE_ENV !== "production";
@@ -197,14 +197,13 @@ app.use(helmet({
         "https://identitytoolkit.googleapis.com",
         "https://securetoken.googleapis.com",
         "https://www.googleapis.com",
-        "https://firebaseinstallations.googleapis.com",
         "https://www.google.com",
         "https://recaptcha.net",
         "https://recaptcha.google.com",
         // Anthropic API (AI plan generation)
         "https://api.anthropic.com",
       ],
-      frameSrc:    ["'self'", "https://compass-planning.firebaseapp.com", "https://recaptcha.net", "https://www.google.com"],
+      frameSrc:    ["'self'"],
       fontSrc:     ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc:   ["'none'"],
       baseUri:     ["'self'"],           // prevents base tag hijacking
