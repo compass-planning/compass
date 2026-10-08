@@ -24,7 +24,9 @@ import { lettersRouter }    from "./routes/letters.js";
 import { goalsRouter }      from "./routes/goals.js";
 import { pensionRouter }    from "./routes/pension.js";
 import aiVoiceRouter        from "./routes/ai-voice.js";
-import { auditRouter }      from "./routes/audit.js";
+import { auditRouter }        from "./routes/audit.js";
+import { privacyRouter }      from "./routes/privacy.js";
+import { healthAlertsRouter } from "./routes/health-alerts.js";
 import { httpLogger, logger } from "./logger.js";
 import { safeMsg, AppError } from "./lib/errorUtils.js";
 import { planningRouter }   from "./planning/routes.js";
@@ -300,7 +302,9 @@ app.use((req: any, _res: any, next: any) => {
 // ── Routes ─────────────────────────────────────────────────────────────────────
 app.get("/api/health",    (_req, res) => res.json({ ok: true }));
 app.use("/api/auth",      authRouter);
-app.use("/api/audit",       auditRouter);
+app.use("/api/audit",         auditRouter);
+app.use("/api/privacy",       privacyRouter);
+app.use("/api/health-alerts", healthAlertsRouter);
 app.use("/api/subscription", subscriptionsRouter);
 app.use("/api/admin",        adminRouter);
 app.use("/api",           goalsRouter);

@@ -1,4 +1,4 @@
-app = 'compass-planning'
+app = 'compass-feaspq'
 primary_region = 'yyz'
 
 [build]
@@ -10,6 +10,13 @@ primary_region = 'yyz'
 [env]
   NODE_ENV = 'production'
   PORT = '8080'
+
+# ── Metrics (Prometheus-compatible endpoint) ──────────────────────────────────
+# Exposes CPU, memory, HTTP request counts to Fly's built-in Grafana.
+# Set alerts in Fly dashboard → Metrics → Alert rules.
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [http_service]
   internal_port = 8080

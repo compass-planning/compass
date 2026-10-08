@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Scale, PiggyBank,
   Shield, Receipt, Brain, TrendingUp,
   FileText, Target, Sparkles, UserCog,
-  CreditCard, Globe, Building2, Home,
+  CreditCard, Globe, Building2, Home, ShieldCheck,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useLocale } from "../hooks/useLocale";
@@ -13,7 +13,7 @@ export type Tab =
   | "retirementhub" | "protection"
   | "expenses"
   | "taxestate" | "ai"
-  | "documents" | "fp" | "profile";
+  | "documents" | "fp" | "profile" | "privacy";
 
 interface Props {
   activeTab: Tab;
@@ -43,6 +43,13 @@ function useTabGroups(t: any) {
         { key: "protection",    label: t("nav.insurance"),  icon: Shield },
         { key: "expenses",      label: t("nav.cashFlow"),   icon: Receipt },
         { key: "taxestate",     label: t("nav.tax"),        icon: Building2 },
+      ],
+    },
+    {
+      group: "account",
+      label: "Account",
+      tabs: [
+        { key: "privacy", label: "Privacy & PIPEDA", icon: ShieldCheck },
       ],
     },
     {

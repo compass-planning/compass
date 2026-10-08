@@ -13,6 +13,10 @@ import { TabLoader, Field, SectionHeader, Card, Input, Select, DobInput, Textare
 import { ChangePasswordModal } from "../components/ChangePasswordModal";
 import { SubscriptionBanner } from "../components/SubscriptionBanner";
 import { SubscriptionModal }  from "../components/SubscriptionModal";
+import { useIdleLogout }      from "../hooks/useIdleLogout";
+import { SessionWarningModal } from "../components/SessionWarningModal";
+import { OnboardingWizard }   from "../components/OnboardingWizard";
+const PrivacyPage = lazy(() => import("./Privacy").then(m => ({ default: m.default })));
 const AITab = lazy(() => import("./FinancialPlanning").then(m => ({ default: m.AITab })));
 const NetWorthTabNew   = lazy(() => import("./MultiEntryTabs").then(m => ({ default: m.NetWorthTab })));
 const RetirementHub    = lazy(() => import("../components/RetirementHub").then(m => ({ default: m.RetirementHub })));
@@ -768,6 +772,16 @@ export default function App() {
   const [showForceReset, setShowForceReset] = useState(!!user?.mustResetPassword);
   const [showChangePw, setShowChangePw]     = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showIdleWarn, setShowIdleWarn]     = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const { stay: stayActive } = useIdleLogout({
+    timeoutMs: 15 * 60 * 1000,
+    warnMs:    60 * 1000,
+    onWarn: () => setShowIdleWarn(true),
+    onIdle: () => { setShowIdleWarn(false); logout(); },
+    enabled: !!user,
+  });
   const [tab, setTab] = useState<Tab>("overview");
   const [nwSubtabHint, setNwSubtabHint] = useState<string | undefined>(undefined);
   const [person, setPerson] = useState<"primary"|"spouse"|"combined">("primary");
@@ -1066,10 +1080,29 @@ export default function App() {
               </PlanningDocFlow>
             </div>
           )}
+          {tab === "privacy" && (
+            <QueryClientProvider client={queryClient}>
+              <Suspense fallback={<TabLoader />}>
+                <PrivacyPage />
+              </Suspense>
+            </QueryClientProvider>
+          )}
           </Suspense>
         </div>
       </div>
      </div>
+     <SessionWarningModal
+       open={showIdleWarn}
+       onStay={() => { setShowIdleWarn(false); stayActive(); }}
+       onLogout={() => { setShowIdleWarn(false); logout(); }}
+     />
+     {showOnboarding && (
+       <OnboardingWizard
+         open={showOnboarding}
+         onComplete={() => setShowOnboarding(false)}
+         onSkip={() => setShowOnboarding(false)}
+       />
+     )}
     </VoiceProvider>
   );
 }

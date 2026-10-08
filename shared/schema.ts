@@ -52,6 +52,13 @@ export const users = pgTable("users", {
   province:           text("province"),
   usState:            text("us_state"),
   postalCode:         text("postal_code"),
+  // ── PIPEDA consent ───────────────────────────────────────────────────────
+  consentDataProcessing: boolean("consent_data_processing").default(true),
+  consentMarketing:      boolean("consent_marketing").default(false),
+  consentCrmSharing:     boolean("consent_crm_sharing").default(false),
+  consentUpdatedAt:      timestamp("consent_updated_at", { withTimezone: true }),
+  purgeRequestedAt:      timestamp("purge_requested_at", { withTimezone: true }),
+  purgeAt:               timestamp("purge_at", { withTimezone: true }),
   // ── Subscription ─────────────────────────────────────────────────────────
   subscriptionTier:   text("subscription_tier").notNull().default("trial"),   // "trial" | "monthly" | "annual"
   subscriptionStatus: text("subscription_status").notNull().default("trialing"), // "trialing" | "active" | "past_due" | "canceled"
