@@ -1,5 +1,3 @@
-import { useLocale } from '../hooks/useLocale';
-import { translations, type T } from '../i18n/translations';
 /**
  * MultiEntryTabs.tsx
  * Net Worth, Retirement, Insurance, RESP, Debt tabs
@@ -45,11 +43,11 @@ function InlineInput({ value, onChange, type = "text", placeholder, className, m
       className={cn("border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500", className)} />
   );
 }
-function InlineSelect({ value, onChange, options, labelMap }: { value: string; onChange: (v: string) => void; options: string[]; labelMap?: Record<string, string> }) {
+function InlineSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
       className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 bg-white">
-      {options.map(o => <option key={o} value={o}>{labelMap?.[o] ?? o}</option>)}
+      {options.map(o => <option key={o}>{o}</option>)}
     </select>
   );
 }
@@ -58,76 +56,12 @@ const PROVINCES = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","
 // Note: Pension lives in the Retirement Hub (Pension sub-tab); RESP lives in the
 // Net Worth → Education sub-tab. They are intentionally absent from the Assets list.
 const NW_ASSET_CATS = ["Principal Residence","Real Estate (other)","RRSP","TFSA","Non-Registered","Cash / Bank","Business","Employer Stock Options","Other Asset"];
-
-function assetCatLabel(cat: string, t: T): string {
-  const m: Record<string, string> = {
-    "Principal Residence":    t.netWorth.catPrincipalResidence,
-    "Real Estate (other)":    t.netWorth.catRealEstate,
-    "RRSP":                   t.netWorth.catRRSP,
-    "TFSA":                   t.netWorth.catTFSA,
-    "Non-Registered":           t.netWorth.catNonRegistered,
-    "Cash / Bank":            t.netWorth.catCashBank,
-    "Business":               t.netWorth.catBusiness,
-    "Employer Stock Options": t.netWorth.catEmployerStock,
-    "Other Asset":            t.netWorth.catOtherAsset,
-    "Mortgage":                  t.netWorth.catMortgage,
-    "Other Liability":        t.netWorth.catOtherLiability,
-    "HELOC":                  t.netWorth.catHELOC,
-    "Car Loan":               t.netWorth.catCarLoan,
-    "Credit Card":            t.netWorth.catCreditCard,
-    "Student Loan":           t.netWorth.catStudentLoan,
-    "Line of Credit":         t.netWorth.catLineOfCredit,
-    "Property Taxes Owing":   t.netWorth.catPropertyTax,
-    "Personal Taxes Owing":   t.netWorth.catPersonalTax,
-  };
-  return m[cat] ?? cat;
-}
-
-function debtTypeLabel(type: string, t: T): string {
-  const m: Record<string, string> = {
-    "mortgage":       t.debt.typeMortgage,
-    "heloc":          t.debt.typeHeloc,
-    "car_loan":       t.debt.typeCarLoan,
-    "credit_card":    t.debt.typeCreditCard,
-    "student_loan":   t.debt.typeStudentLoan,
-    "line_of_credit": t.debt.typeLineOfCredit,
-    "other":          t.debt.typeOther,
-  };
-  return m[type] ?? type;
-}
-
-function strategyLabel(s: string, t: T): string {
-  const m: Record<string, string> = {
-    "avalanche": t.debt.stratAvalanche,
-    "snowball":  t.debt.stratSnowball,
-  };
-  return m[s] ?? s;
-}
-
-function holdingLabel(h: string, t: T): string {
-  const m: Record<string, string> = {
-    "Mutual Funds": t.netWorth.holdingMutualFunds,
-    "Stock":        t.netWorth.holdingStock,
-    "GIC":          t.netWorth.holdingGIC,
-    "Annuity":      t.netWorth.holdingAnnuity,
-  };
-  return m[h] ?? h;
-}
-
-function propertyTypeLabel(p: string, t: T): string {
-  const m: Record<string, string> = {
-    "Family Occupied":  t.netWorth.propFamilyOccupied,
-    "Cottage":          t.netWorth.propCottage,
-    "Rental Property":  t.netWorth.propRental,
-  };
-  return m[p] ?? p;
-}
 const NW_ASSET_COLORS: Record<string, string> = {
   "Principal Residence":     "#22d3ee",
   "Real Estate (other)":     "#60a5fa",
   "RRSP":                    "#34d399",
   "TFSA":                    "#fbbf24",
-  "Non-Registered":            "#c084fc",
+  "Non-Registered":          "#c084fc",
   "Cash / Bank":             "#06b6d4",
   "Business":                "#a78bfa",
   "Employer Stock Options":  "#fb923c",
@@ -137,6 +71,334 @@ const NW_LIAB_CATS = ["Mortgage","HELOC","Car Loan","Credit Card","Student Loan"
 const DEBT_TYPES    = ["mortgage","heloc","car_loan","credit_card","student_loan","line_of_credit","other"];
 const PENSION_TYPES = ["DBPP","DCPP","Self-Directed","Matching Contributions"];
 const HOLDING_TYPES = ["Mutual Funds","Stock","GIC","Annuity"];
+
+// ── Canadian Mutual Funds — curated list by fund family ───────────────────────
+// Phase 2: add fundCode to each entry and auto-fetch NAV from Fund Library API
+export interface MutualFundOption {
+  family: string;
+  name: string;
+  code: string; // reserved for Phase 2 NAV auto-fetch
+}
+export const CANADIAN_MUTUAL_FUNDS: MutualFundOption[] = [
+  // RBC
+  { family: "RBC", name: "RBC Canadian Equity Fund", code: "RBF460" },
+  { family: "RBC", name: "RBC U.S. Equity Fund", code: "RBF462" },
+  { family: "RBC", name: "RBC Global Equity Fund", code: "RBF463" },
+  { family: "RBC", name: "RBC Balanced Fund", code: "RBF459" },
+  { family: "RBC", name: "RBC Bond Fund", code: "RBF458" },
+  { family: "RBC", name: "RBC Money Market Fund", code: "RBF556" },
+  { family: "RBC", name: "RBC Canadian Dividend Fund", code: "RBF267" },
+  { family: "RBC", name: "RBC North American Growth Fund", code: "RBF557" },
+  { family: "RBC", name: "RBC Emerging Markets Equity Fund", code: "RBF477" },
+  { family: "RBC", name: "RBC Conservative Growth & Income Fund", code: "RBF264" },
+  { family: "RBC", name: "RBC Balanced Growth & Income Fund", code: "RBF265" },
+  { family: "RBC", name: "RBC Select Balanced Portfolio", code: "RBF285" },
+  { family: "RBC", name: "RBC Select Conservative Portfolio", code: "RBF284" },
+  { family: "RBC", name: "RBC Select Growth Portfolio", code: "RBF286" },
+  // TD
+  { family: "TD", name: "TD Canadian Bond Fund", code: "TDB900" },
+  { family: "TD", name: "TD Canadian Equity Fund", code: "TDB902" },
+  { family: "TD", name: "TD Balanced Growth Fund", code: "TDB622" },
+  { family: "TD", name: "TD Dividend Growth Fund", code: "TDB183" },
+  { family: "TD", name: "TD U.S. Blue Chip Equity Fund", code: "TDB904" },
+  { family: "TD", name: "TD Global Multi-Asset Fund", code: "TDB963" },
+  { family: "TD", name: "TD Money Market Fund", code: "TDB8150" },
+  { family: "TD", name: "TD Comfort Balanced Growth Portfolio", code: "TDB972" },
+  { family: "TD", name: "TD Comfort Conservative Income Portfolio", code: "TDB971" },
+  { family: "TD", name: "TD Comfort Aggressive Growth Portfolio", code: "TDB974" },
+  { family: "TD", name: "TD Emerging Markets Fund", code: "TDB909" },
+  { family: "TD", name: "TD International Growth Fund", code: "TDB906" },
+  { family: "TD", name: "TD Managed Income Portfolio", code: "TDB968" },
+  { family: "TD", name: "TD Managed Balanced Growth Portfolio", code: "TDB969" },
+  // Fidelity
+  { family: "Fidelity", name: "Fidelity Canadian Growth Company Fund", code: "FID200" },
+  { family: "Fidelity", name: "Fidelity True North Fund", code: "FID227" },
+  { family: "Fidelity", name: "Fidelity Canadian Bond Fund", code: "FID220" },
+  { family: "Fidelity", name: "Fidelity Balanced Fund", code: "FID214" },
+  { family: "Fidelity", name: "Fidelity Global Fund", code: "FID206" },
+  { family: "Fidelity", name: "Fidelity U.S. Focused Stock Fund", code: "FID233" },
+  { family: "Fidelity", name: "Fidelity Monthly Income Fund", code: "FID519" },
+  { family: "Fidelity", name: "Fidelity NorthStar Fund", code: "FID229" },
+  { family: "Fidelity", name: "Fidelity AsiaStar Fund", code: "FID218" },
+  { family: "Fidelity", name: "Fidelity Emerging Markets Fund", code: "FID209" },
+  { family: "Fidelity", name: "Fidelity Conservative Income Fund", code: "FID528" },
+  { family: "Fidelity", name: "Fidelity Dividend Fund", code: "FID231" },
+  // Mackenzie
+  { family: "Mackenzie", name: "Mackenzie Canadian All Cap Balanced Fund", code: "MFC1744" },
+  { family: "Mackenzie", name: "Mackenzie Income Fund", code: "MFC162" },
+  { family: "Mackenzie", name: "Mackenzie Canadian Growth Fund", code: "MFC1580" },
+  { family: "Mackenzie", name: "Mackenzie Global Dividend Fund", code: "MFC5552" },
+  { family: "Mackenzie", name: "Mackenzie Ivy Canadian Fund", code: "MFC822" },
+  { family: "Mackenzie", name: "Mackenzie Ivy Foreign Equity Fund", code: "MFC823" },
+  { family: "Mackenzie", name: "Mackenzie Balanced Fund", code: "MFC1573" },
+  { family: "Mackenzie", name: "Mackenzie U.S. Mid Cap Growth Fund", code: "MFC1597" },
+  { family: "Mackenzie", name: "Mackenzie Emerging Markets Fund", code: "MFC5533" },
+  { family: "Mackenzie", name: "Mackenzie Strategic Income Fund", code: "MFC1577" },
+  { family: "Mackenzie", name: "Mackenzie Canadian Bond Fund", code: "MFC161" },
+  { family: "Mackenzie", name: "Mackenzie Maximum Diversification Developed Markets Index ETF Fund", code: "MFC8765" },
+  // CI Financial
+  { family: "CI", name: "CI Canadian Investment Fund", code: "CIG11100" },
+  { family: "CI", name: "CI American Fund", code: "CIG11200" },
+  { family: "CI", name: "CI International Fund", code: "CIG11300" },
+  { family: "CI", name: "CI Balanced Fund", code: "CIG11108" },
+  { family: "CI", name: "CI Income Fund", code: "CIG11120" },
+  { family: "CI", name: "CI Global Fund", code: "CIG11360" },
+  { family: "CI", name: "CI Short-Term Government Bond Fund", code: "CIG11130" },
+  { family: "CI", name: "CI Cambridge Canadian Equity Fund", code: "CIG3340" },
+  { family: "CI", name: "CI Cambridge Global Equity Fund", code: "CIG3345" },
+  { family: "CI", name: "CI Cambridge Income Fund", code: "CIG3336" },
+  { family: "CI", name: "CI Signature Diversified Yield Fund", code: "CIG50007" },
+  { family: "CI", name: "CI Signature Select Canadian Fund", code: "CIG50004" },
+  // Dynamic
+  { family: "Dynamic", name: "Dynamic Canadian Balanced Fund", code: "DYN006" },
+  { family: "Dynamic", name: "Dynamic Equity Income Fund", code: "DYN027" },
+  { family: "Dynamic", name: "Dynamic Global Discovery Fund", code: "DYN210" },
+  { family: "Dynamic", name: "Dynamic Global Dividend Fund", code: "DYN211" },
+  { family: "Dynamic", name: "Dynamic U.S. Equity Fund", code: "DYN076" },
+  { family: "Dynamic", name: "Dynamic Canadian Bond Fund", code: "DYN010" },
+  { family: "Dynamic", name: "Dynamic Small Business Fund", code: "DYN029" },
+  { family: "Dynamic", name: "Dynamic Power American Growth Fund", code: "DYN049" },
+  { family: "Dynamic", name: "Dynamic Strategic Yield Fund", code: "DYN1059" },
+  // Manulife / Manulife Investment Management
+  { family: "Manulife", name: "Manulife Canadian Equity Fund", code: "MMF1570" },
+  { family: "Manulife", name: "Manulife Balanced Fund", code: "MMF1578" },
+  { family: "Manulife", name: "Manulife Bond Fund", code: "MMF1560" },
+  { family: "Manulife", name: "Manulife Dividend Income Fund", code: "MMF1566" },
+  { family: "Manulife", name: "Manulife Global Equity Fund", code: "MMF1576" },
+  { family: "Manulife", name: "Manulife U.S. Equity Fund", code: "MMF1577" },
+  { family: "Manulife", name: "Manulife Monthly Income Fund", code: "MMF5530" },
+  { family: "Manulife", name: "Manulife Global Multi-Asset Class Fund", code: "MMF5575" },
+  { family: "Manulife", name: "Manulife Strategic Income Fund", code: "MMF5594" },
+  // IG / Investors Group
+  { family: "IG Wealth", name: "IG Mackenzie Canadian Bond Fund", code: "IGI615" },
+  { family: "IG Wealth", name: "IG Mackenzie Global Equity Fund", code: "IGI682" },
+  { family: "IG Wealth", name: "IG Mackenzie Canadian Equity Fund", code: "IGI680" },
+  { family: "IG Wealth", name: "IG Mackenzie Balanced Fund", code: "IGI633" },
+  { family: "IG Wealth", name: "IG Mackenzie U.S. Equity Fund", code: "IGI681" },
+  { family: "IG Wealth", name: "IG Mackenzie Income Portfolio", code: "IGI655" },
+  { family: "IG Wealth", name: "IG Mackenzie Conservative Portfolio", code: "IGI656" },
+  { family: "IG Wealth", name: "IG Mackenzie Balanced Portfolio", code: "IGI657" },
+  { family: "IG Wealth", name: "IG Mackenzie Growth Portfolio", code: "IGI658" },
+  // BMO
+  { family: "BMO", name: "BMO Canadian Balanced Fund", code: "BMO20302" },
+  { family: "BMO", name: "BMO Canadian Equity Fund", code: "BMO20301" },
+  { family: "BMO", name: "BMO U.S. Equity Fund", code: "BMO20303" },
+  { family: "BMO", name: "BMO Bond Fund", code: "BMO20306" },
+  { family: "BMO", name: "BMO Dividend Fund", code: "BMO20307" },
+  { family: "BMO", name: "BMO Global Equity Fund", code: "BMO20325" },
+  { family: "BMO", name: "BMO Income ETF Portfolio", code: "BMO50001" },
+  { family: "BMO", name: "BMO Conservative ETF Portfolio", code: "BMO50002" },
+  { family: "BMO", name: "BMO Balanced ETF Portfolio", code: "BMO50003" },
+  { family: "BMO", name: "BMO Growth ETF Portfolio", code: "BMO50004" },
+  { family: "BMO", name: "BMO Aggressive Growth ETF Portfolio", code: "BMO50005" },
+  // CIBC / Renaissance
+  { family: "CIBC", name: "CIBC Canadian Bond Fund", code: "CIB506" },
+  { family: "CIBC", name: "CIBC Canadian Equity Fund", code: "CIB504" },
+  { family: "CIBC", name: "CIBC Balanced Fund", code: "CIB503" },
+  { family: "CIBC", name: "CIBC U.S. Equity Fund", code: "CIB505" },
+  { family: "CIBC", name: "CIBC Global Equity Fund", code: "CIB534" },
+  { family: "CIBC", name: "CIBC Dividend Growth Fund", code: "CIB512" },
+  { family: "CIBC", name: "CIBC Monthly Income Fund", code: "CIB559" },
+  { family: "CIBC", name: "Renaissance Canadian Bond Fund", code: "ATL202" },
+  { family: "CIBC", name: "Renaissance Balanced Growth Fund", code: "ATL227" },
+  { family: "CIBC", name: "Renaissance Canadian Equity Fund", code: "ATL203" },
+  // Desjardins
+  { family: "Desjardins", name: "Desjardins Canadian Bond Fund", code: "DES303" },
+  { family: "Desjardins", name: "Desjardins Canadian Equity Fund", code: "DES301" },
+  { family: "Desjardins", name: "Desjardins Balanced Fund", code: "DES302" },
+  { family: "Desjardins", name: "Desjardins U.S. Equity Fund", code: "DES304" },
+  { family: "Desjardins", name: "Desjardins Global Equity Fund", code: "DES305" },
+  { family: "Desjardins", name: "Desjardins Dividend Growth Fund", code: "DES310" },
+  // Sunlife / Sun Life Global Investments
+  { family: "Sun Life", name: "Sun Life MFS Canadian Equity Fund", code: "SLA301" },
+  { family: "Sun Life", name: "Sun Life MFS U.S. Growth Fund", code: "SLA302" },
+  { family: "Sun Life", name: "Sun Life MFS Global Growth Fund", code: "SLA303" },
+  { family: "Sun Life", name: "Sun Life Granite Conservative Portfolio", code: "SLA401" },
+  { family: "Sun Life", name: "Sun Life Granite Moderate Portfolio", code: "SLA402" },
+  { family: "Sun Life", name: "Sun Life Granite Balanced Portfolio", code: "SLA403" },
+  { family: "Sun Life", name: "Sun Life Granite Growth Portfolio", code: "SLA404" },
+  { family: "Sun Life", name: "Sun Life Granite Maximum Growth Portfolio", code: "SLA405" },
+  // Ninepoint
+  { family: "Ninepoint", name: "Ninepoint Canadian Equity Fund", code: "NIN001" },
+  { family: "Ninepoint", name: "Ninepoint Energy Fund", code: "NIN002" },
+  { family: "Ninepoint", name: "Ninepoint Alternative Health Fund", code: "NIN003" },
+  { family: "Ninepoint", name: "Ninepoint High Income Equity Fund", code: "NIN004" },
+  // Empire Life
+  { family: "Empire Life", name: "Empire Life Equity Fund", code: "EMP101" },
+  { family: "Empire Life", name: "Empire Life Balanced Fund", code: "EMP102" },
+  { family: "Empire Life", name: "Empire Life Fixed Income Fund", code: "EMP103" },
+  { family: "Empire Life", name: "Empire Life Monthly Income Fund", code: "EMP104" },
+  // Industrial Alliance
+  { family: "iA Financial", name: "iA Canadian Equity Fund", code: "IAF201" },
+  { family: "iA Financial", name: "iA Balanced Fund", code: "IAF202" },
+  { family: "iA Financial", name: "iA Bond Fund", code: "IAF203" },
+  { family: "iA Financial", name: "iA U.S. Equity Fund", code: "IAF204" },
+  { family: "iA Financial", name: "iA Global Equity Fund", code: "IAF205" },
+  { family: "iA Financial", name: "iA Dividend Fund", code: "IAF206" },
+  // National Bank
+  { family: "National Bank", name: "National Bank Canadian Bond Fund", code: "NBF101" },
+  { family: "National Bank", name: "National Bank Balanced Fund", code: "NBF102" },
+  { family: "National Bank", name: "National Bank Canadian Equity Fund", code: "NBF103" },
+  { family: "National Bank", name: "National Bank U.S. Equity Fund", code: "NBF104" },
+  { family: "National Bank", name: "National Bank Global Equity Fund", code: "NBF105" },
+  { family: "National Bank", name: "National Bank Dividend Fund", code: "NBF106" },
+  // Invesco
+  { family: "Invesco", name: "Invesco Canadian Premier Growth Fund", code: "AIM101" },
+  { family: "Invesco", name: "Invesco Balanced Risk Allocation Fund", code: "AIM102" },
+  { family: "Invesco", name: "Invesco Canadian Core Plus Bond Fund", code: "AIM103" },
+  { family: "Invesco", name: "Invesco Global Companies Fund", code: "AIM104" },
+  // Horizons ETF managed funds
+  { family: "Horizons", name: "Horizons Active Canadian Bond ETF Fund", code: "HOR001" },
+  { family: "Horizons", name: "Horizons Active Floating Rate Bond ETF Fund", code: "HOR002" },
+  { family: "Horizons", name: "Horizons Active Global Dividend Fund", code: "HOR003" },
+];
+
+// Get sorted unique fund families
+export const FUND_FAMILIES = [...new Set(CANADIAN_MUTUAL_FUNDS.map(f => f.family))].sort();
+
+// ── Fund holding line item ────────────────────────────────────────────────────
+export interface FundHolding {
+  name: string;
+  code: string;   // reserved for Phase 2 NAV auto-fetch
+  value: string;  // market value in $
+}
+
+// ── FundSearchInput — single searchable combobox row ─────────────────────────
+function FundSearchInput({
+  onSelect,
+  alreadySelected,
+}: {
+  onSelect: (f: MutualFundOption) => void;
+  alreadySelected: string[]; // codes already picked
+}) {
+  const [query, setQuery]   = useState("");
+  const [open, setOpen]     = useState(false);
+  const [family, setFamily] = useState("");
+
+  const filtered = CANADIAN_MUTUAL_FUNDS.filter(f => {
+    if (alreadySelected.includes(f.code)) return false;
+    if (family && f.family !== family) return false;
+    if (!query) return true;
+    return f.name.toLowerCase().includes(query.toLowerCase()) || f.family.toLowerCase().includes(query.toLowerCase());
+  }).slice(0, 40);
+
+  function pick(f: MutualFundOption) {
+    setQuery("");
+    setOpen(false);
+    onSelect(f);
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex gap-1.5 mb-1">
+        <select
+          value={family}
+          onChange={e => { setFamily(e.target.value); setOpen(true); }}
+          className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 flex-shrink-0"
+        >
+          <option value="">All families</option>
+          {FUND_FAMILIES.map(f => <option key={f}>{f}</option>)}
+        </select>
+        {family && (
+          <button type="button" onClick={() => { setFamily(""); }} className="text-slate-400 hover:text-slate-600 text-xs px-1">✕</button>
+        )}
+      </div>
+      <input
+        type="text"
+        value={query}
+        placeholder="Search and add a fund…"
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="border border-dashed border-cyan-300 rounded-lg px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 bg-cyan-50/40 placeholder-slate-400"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
+          {filtered.map(f => (
+            <button
+              key={f.code}
+              type="button"
+              onMouseDown={() => pick(f)}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors border-b border-gray-50 last:border-0"
+            >
+              <span className="text-sm text-slate-800">{f.name}</span>
+              <span className="ml-2 text-[10px] text-slate-400 font-mono">{f.family}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {open && query.length > 1 && filtered.length === 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg px-3 py-2 text-sm text-slate-400">
+          No matching funds found.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── MultiFundSelector — multi-fund list with per-fund value fields ─────────────
+// holdings: array of { name, code, value }
+// onChange: called with updated array; parent rolls up total value
+function MultiFundSelector({
+  holdings,
+  onChange,
+}: {
+  holdings: FundHolding[];
+  onChange: (holdings: FundHolding[]) => void;
+}) {
+  function addFund(f: MutualFundOption) {
+    onChange([...holdings, { name: f.name, code: f.code, value: "" }]);
+  }
+  function removeFund(idx: number) {
+    onChange(holdings.filter((_, i) => i !== idx));
+  }
+  function updateValue(idx: number, value: string) {
+    onChange(holdings.map((h, i) => i === idx ? { ...h, value } : h));
+  }
+  const total = holdings.reduce((s, h) => s + (Number(h.value) || 0), 0);
+  const alreadySelected = holdings.map(h => h.code);
+
+  return (
+    <div className="col-span-4 mt-1 space-y-2 border border-cyan-100 rounded-xl p-3 bg-cyan-50/30">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-semibold text-cyan-700">Mutual Fund Holdings</span>
+        {holdings.length > 0 && (
+          <span className="text-xs text-slate-500 font-mono">Total: <span className="font-semibold text-slate-700">${total.toLocaleString()}</span></span>
+        )}
+      </div>
+      {/* Selected fund rows */}
+      {holdings.map((h, idx) => (
+        <div key={`${h.code}-${idx}`} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-gray-100 shadow-sm">
+          <span className="text-xs text-slate-700 flex-1 min-w-0 truncate" title={h.name}>{h.name}</span>
+          <span className="text-[10px] text-slate-400 font-mono hidden sm:block flex-shrink-0">{h.code}</span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-xs text-slate-400">$</span>
+            <input
+              type="number"
+              value={h.value}
+              onChange={e => updateValue(idx, e.target.value)}
+              placeholder="0"
+              className="border border-gray-200 rounded-md px-2 py-1 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => removeFund(idx)}
+            className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0 ml-1"
+            title="Remove fund"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      {/* Search to add more */}
+      <FundSearchInput onSelect={addFund} alreadySelected={alreadySelected} />
+      {holdings.length === 0 && (
+        <p className="text-[11px] text-slate-400 text-center py-1">Search above to add one or more funds.</p>
+      )}
+    </div>
+  );
+}
 const PROPERTY_TYPES = ["Family Occupied","Cottage","Rental Property"];
 
 // ── NET WORTH ─────────────────────────────────────────────────────────────────
@@ -148,6 +410,7 @@ type NWDraft = {
   monthlyPayment: string;
   respBeneficiary: string;
   holdingType: string;
+  funds: FundHolding[];  // multi-fund holdings when holdingType === "Mutual Funds"
   jointWithSpouse: boolean;
   stockOptionType: string;
   propertyType: string;
@@ -159,7 +422,7 @@ type NWDraft = {
   includeInDebt: boolean;
 };
 
-function emptyDraft(type: "asset"|"liability", t = translations.en as T): NWDraft {
+function emptyDraft(type: "asset"|"liability"): NWDraft {
   return {
     type, category: type === "asset" ? "Principal Residence" : "Mortgage",
     name: "", owner: "primary", value: "", notes: "",
@@ -168,6 +431,7 @@ function emptyDraft(type: "asset"|"liability", t = translations.en as T): NWDraf
     monthlyPayment: "",
     respBeneficiary: "",
     holdingType: "",
+    funds: [],
     jointWithSpouse: false,
     stockOptionType: "RSU",
     propertyType: "Family Occupied",
@@ -180,7 +444,7 @@ function emptyDraft(type: "asset"|"liability", t = translations.en as T): NWDraf
   };
 }
 
-function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NWDraft; onChange: (k: keyof NWDraft, v: any) => void; spouseName: string; dependants?: any[]; t: T }) {
+function ExtraFields({ draft, onChange, spouseName, dependants }: { draft: NWDraft; onChange: (k: keyof NWDraft, v: any) => void; spouseName: string; dependants?: any[] }) {
   const elems: React.ReactNode[] = [];
 
   if (draft.category === "RRSP") {
@@ -192,11 +456,11 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
         </label>
         {draft.isSpousal && (
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-[var(--text-tertiary)]">{t.netWorth.contributor + ":"}</span>
+            <span className="text-xs text-[var(--text-tertiary)]">Contributor:</span>
             <select value={draft.rrspContributor} onChange={e => onChange("rrspContributor", e.target.value)} className={SELECT_CLS}>
-              <option value="">{t.netWorth.selectContributor}</option>
-              <option value="client">{t.common.primary}</option>
-              <option value="spouse">{t.common.spouse}</option>
+              <option value="">Select contributor</option>
+              <option value="client">Client</option>
+              <option value="spouse">Spouse</option>
             </select>
           </div>
         )}
@@ -210,7 +474,7 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
         <span className="text-xs text-[var(--text-tertiary)]">Type:</span>
         <select value={draft.holdingType} onChange={e => onChange("holdingType", e.target.value)} className={SELECT_CLS}>
           <option value="">Select type…</option>
-          {HOLDING_TYPES.map(h => <option key={h} value={h}>{holdingLabel(h, t)}</option>)}
+          {HOLDING_TYPES.map(t => <option key={t}>{t}</option>)}
         </select>
       </div>
     );
@@ -218,7 +482,7 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
 
   if (draft.category === "Non-Registered" && spouseName) {
     elems.push(
-      <label key={t.common.joint} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer">
+      <label key="joint" className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer">
         <input type="checkbox" checked={draft.jointWithSpouse} onChange={e => onChange("jointWithSpouse", e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--accent-cyan)]" />
         Jointly held with spouse
         <span className="text-[10px] text-[var(--text-tertiary)]">(sets owner to Joint)</span>
@@ -229,7 +493,7 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
   if (draft.category === "Employer Stock Options") {
     elems.push(
       <div key="stockopt" className="flex items-center gap-1.5">
-        <span className="text-xs text-[var(--text-tertiary)]">{t.netWorth.subType + ":"}</span>
+        <span className="text-xs text-[var(--text-tertiary)]">Sub-type:</span>
         <select value={draft.stockOptionType} onChange={e => onChange("stockOptionType", e.target.value)} className={SELECT_CLS}>
           <option value="RSU">RSU — Restricted Stock Unit</option>
           <option value="ESU">ESU — Employee Stock Unit</option>
@@ -242,15 +506,15 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
     elems.push(
       <div key="realestate-pr" className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">{t.netWorth.catMortgage} ($):</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Mortgage balance ($):</span>
           <InlineInput value={draft.mortgageBalance} onChange={v => onChange("mortgageBalance", v)} type="number" placeholder="0" className="w-28" />
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">{t.cashFlow.title} ($):</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Monthly payment ($):</span>
           <InlineInput value={draft.mortgageMonthlyPayment} onChange={v => onChange("mortgageMonthlyPayment", v)} type="number" placeholder="0" className="w-28" />
         </div>
         {Number(draft.mortgageBalance) > 0 && (
-          <span className="text-[10px] text-[var(--accent-cyan)] italic">"Adds a linked Mortgage to the Liabilities tab"</span>
+          <span className="text-[10px] text-[var(--accent-cyan)] italic">{ct("netWorth.linkedMortgage")}</span>
         )}
       </div>
     );
@@ -260,9 +524,9 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
     elems.push(
       <div key="realestate-other" className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">{t.netWorth.propertyType + ":"}</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Property type:</span>
           <select value={draft.propertyType} onChange={e => onChange("propertyType", e.target.value)} className={SELECT_CLS}>
-            {PROPERTY_TYPES.map(p => <option key={p} value={p}>{propertyTypeLabel(p, t)}</option>)}
+            {PROPERTY_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-1.5">
@@ -270,11 +534,11 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
           <InlineInput value={draft.purchasePrice} onChange={v => onChange("purchasePrice", v)} type="number" placeholder="0" className="w-28" />
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">{t.netWorth.catMortgage} ($):</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Mortgage balance ($):</span>
           <InlineInput value={draft.mortgageBalance} onChange={v => onChange("mortgageBalance", v)} type="number" placeholder="0" className="w-28" />
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">{t.cashFlow.title} ($):</span>
+          <span className="text-xs text-[var(--text-tertiary)]">Monthly payment ($):</span>
           <InlineInput value={draft.mortgageMonthlyPayment} onChange={v => onChange("mortgageMonthlyPayment", v)} type="number" placeholder="0" className="w-28" />
         </div>
         {draft.propertyType === "Rental Property" && (
@@ -290,7 +554,7 @@ function ExtraFields({ draft, onChange, spouseName, dependants, t }: { draft: NW
           </>
         )}
         {Number(draft.mortgageBalance) > 0 && (
-          <span className="text-[10px] text-[var(--accent-cyan)] italic">"Adds a linked Mortgage to the Liabilities tab"</span>
+          <span className="text-[10px] text-[var(--accent-cyan)] italic">{ct("netWorth.linkedMortgage")}</span>
         )}
       </div>
     );
@@ -364,8 +628,6 @@ function AssetRow({
   entry: NWEntry; onEdit: () => void; onDelete: () => void;
   ownerLabel: string; metaBadge: React.ReactNode; isAsset: boolean;
 }) {
-  const { locale } = useLocale();
-  const t = translations[locale as "en"|"fr"] ?? translations.en;
   return (
     <div className="group flex justify-between items-center px-5 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
       <div>
@@ -380,10 +642,10 @@ function AssetRow({
           {fmt$(entry.value)}
         </p>
         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-          <button onClick={onEdit} className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors" title={t.common.edit}>
+          <button onClick={onEdit} className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
             <Pencil className="w-3.5 h-3.5 text-blue-400" />
           </button>
-          <button onClick={onDelete} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors" title={t.common.delete}>
+          <button onClick={onDelete} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
             <Trash2 className="w-3.5 h-3.5 text-red-400" />
           </button>
         </div>
@@ -393,7 +655,7 @@ function AssetRow({
 }
 
 // ── normalizeCat — remap legacy category names ────────────────────────────────
-function normalizeCat(e: NWEntry, t = translations.en as T): NWEntry {
+function normalizeCat(e: NWEntry): NWEntry {
   if (e.category === "ESU" || e.category === "RSU")
     return { ...e, category: "Employer Stock Options", metadata: { ...(e.metadata ?? {}), stockOptionType: e.category } };
   if (e.category === "Real Estate")
@@ -420,7 +682,8 @@ function CustomTooltip({ active, payload, totalA }: { active?: boolean; payload?
   };
 
 // ── NetWorthTab ───────────────────────────────────────────────────────────────
-export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; client?: { firstName: string; lastName: string; spouseFirstName?: string | null; spouseLastName?: string | null } }) {
+export function NetWorthTab({ clientId, client }: { clientId: number; client?: { firstName: string; lastName: string; spouseFirstName?: string | null; spouseLastName?: string | null } }) {
+  const { ct } = useClientLocale();
   const [entries, setEntries] = useState<NWEntry[]>([]);
   const [drafts, setDrafts]   = useState<NWDraft[]>([]);
   const [saving, setSaving]   = useState(false);
@@ -430,9 +693,9 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
   const [voiceOpen, setVoiceOpen] = useState<null | "asset" | "liability">(null);
 
   const spouseName  = client?.spouseFirstName ? `${client.spouseFirstName} ${client.spouseLastName ?? ""}`.trim() : "";
-  const primaryName = client ? `${client.firstName} ${client.lastName}` : t.common.primary;
+  const primaryName = client ? `${client.firstName} ${client.lastName}` : "Primary";
 
-  const load = () => api.get<NWEntry[]>(`/api/clients/${clientId}/net-worth`).then(raw => setEntries(raw.map(e => normalizeCat(e))));
+  const load = () => api.get<NWEntry[]>(`/api/clients/${clientId}/net-worth`).then(raw => setEntries(raw.map(normalizeCat)));
   useEffect(() => { load(); }, [clientId]);
 
   const assets = entries.filter(e => e.type === "asset");
@@ -476,7 +739,9 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
       isSpousal: !!m.spousal, rrspContributor: m.contributor ?? "",
       pensionType: m.pensionType ?? "DBPP", matchPct: m.matchPct ?? "",
       monthlyPayment: m.monthlyPayment ?? "", respBeneficiary: m.respBeneficiary ?? "",
-      holdingType: m.holdingType ?? "", jointWithSpouse: e.owner === "joint",
+      holdingType: m.holdingType ?? "",
+      funds: m.funds ?? [],
+      jointWithSpouse: e.owner === "joint",
       stockOptionType: m.stockOptionType ?? (e.category === "ESU" ? "ESU" : "RSU"),
       propertyType: m.propertyType ?? "Family Occupied",
       purchasePrice: m.purchasePrice ? String(m.purchasePrice) : "",
@@ -490,7 +755,13 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
     const cat = form.category ?? "";
     if (cat === "RRSP" && form.isSpousal) { m.spousal = true; m.contributor = form.rrspContributor; }
     if ((form as any).monthlyPayment) m.monthlyPayment = (form as any).monthlyPayment;
-    if (["RRSP", "TFSA", "Non-Registered"].includes(cat) && form.holdingType) m.holdingType = form.holdingType;
+    if (["RRSP", "TFSA", "Non-Registered"].includes(cat) && form.holdingType) {
+      m.holdingType = form.holdingType;
+      if (form.holdingType === "Mutual Funds") {
+        const funds: FundHolding[] = (form as any).funds ?? [];
+        if (funds.length > 0) m.funds = funds;
+      }
+    }
     if (cat === "Employer Stock Options" && form.stockOptionType) m.stockOptionType = form.stockOptionType;
     if (cat === "Real Estate (other)") {
       if (form.propertyType) m.propertyType = form.propertyType;
@@ -504,15 +775,23 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
   }
 
   async function saveEdit() {
-    if (!editingId || !editForm.value) return;
+    const editFunds: FundHolding[] = (editForm as any).funds ?? [];
+    const isEditMutualFunds = editForm.holdingType === "Mutual Funds" && editFunds.length > 0;
+    const editRolledValue = isEditMutualFunds
+      ? String(editFunds.reduce((s, h) => s + (Number(h.value) || 0), 0))
+      : editForm.value;
+    if (!editingId || !editRolledValue) return;
     setSaving(true);
     try {
       const m = buildMeta(editForm);
       let owner = editForm.owner ?? "primary";
       if (editForm.jointWithSpouse && editForm.category === "Non-Registered") owner = "joint";
+      const editDisplayName = isEditMutualFunds
+        ? (editFunds.length === 1 ? editFunds[0].name : `${editFunds.length} Mutual Funds — ${editForm.category}`)
+        : (editForm.name || editForm.category);
       await api.put(`/api/net-worth/${editingId}`, {
-        category: editForm.category, name: editForm.name || editForm.category,
-        owner, value: editForm.value, notes: editForm.notes || null,
+        category: editForm.category, name: editDisplayName,
+        owner, value: editRolledValue, notes: editForm.notes || null,
         metadata: Object.keys(m).length ? m : null,
       });
       setEditingId(null); setEditForm({});
@@ -523,6 +802,7 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
   function isDraftSavable(d: NWDraft) {
     const isProperty = d.category === "Principal Residence" || d.category === "Real Estate (other)";
     if (isProperty) return Number(d.value || 0) > 0 || Number(d.purchasePrice || 0) > 0 || Number(d.mortgageBalance || 0) > 0;
+    if (d.holdingType === "Mutual Funds") return d.funds.length > 0 && d.funds.some(h => Number(h.value) > 0);
     return Boolean(d.value);
   }
 
@@ -535,10 +815,20 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
         const m = buildMeta(d as any);
         let owner = d.owner;
         if (d.jointWithSpouse && d.category === "Non-Registered") owner = "joint";
-        const propName = d.name || d.category;
+        // For mutual funds, build a display name from the fund list
+        const isMutualFunds = d.holdingType === "Mutual Funds" && d.funds.length > 0;
+        const fundDisplayName = isMutualFunds
+          ? (d.funds.length === 1 ? d.funds[0].name : `${d.funds.length} Mutual Funds — ${d.category}`)
+          : null;
+        const propName = fundDisplayName || d.name || d.category;
+        // Roll-up value from individual fund values when in mutual-fund mode
+        const rolledValue = isMutualFunds
+          ? String(d.funds.reduce((s, h) => s + (Number(h.value) || 0), 0))
+          : undefined;
         const isProperty = d.category === "Principal Residence" || d.category === "Real Estate (other)";
         const mortgageVal = Number(d.mortgageBalance || 0);
-        const assetValue = isProperty && !Number(d.value || 0) && Number(d.purchasePrice || 0) > 0 ? d.purchasePrice : d.value;
+        const assetValue = isMutualFunds ? rolledValue
+          : isProperty && !Number(d.value || 0) && Number(d.purchasePrice || 0) > 0 ? d.purchasePrice : d.value;
         await api.post(`/api/clients/${clientId}/net-worth`, {
           type: d.type, category: d.category,
           name: propName, owner, value: assetValue, notes: d.notes || null,
@@ -573,12 +863,12 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
   }
 
   async function del(id: number) {
-    if (!confirm(t.netWorth.deleteEntry)) return;
+    if (!confirm("Delete this entry?")) return;
     await api.delete(`/api/net-worth/${id}`); await load();
   }
 
   function ownerLabel(entry: NWEntry) {
-    return entry.owner === "spouse" ? (spouseName || t.common.spouse) : entry.owner === "joint" ? "Joint" : primaryName;
+    return entry.owner === "spouse" ? (spouseName || "Spouse") : entry.owner === "joint" ? "Joint" : primaryName;
   }
 
   function metaBadge(entry: NWEntry) {
@@ -602,7 +892,7 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
 
   // Education sub-tab
   if (nwTab === "education") {
-    return <RespTab clientId={clientId} client={client} t={t} />;
+    return <RespTab clientId={clientId} client={client} />;
   }
 
   const isAssets = nwTab !== "liabilities";
@@ -624,16 +914,16 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
 
       {/* ── Summary cards ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <SummaryCard label={t.netWorth.totalNetWorth} value={fmt$(netWorth)} tone={netWorth >= 0 ? "text-slate-900" : "text-red-500"} />
-        <SummaryCard label={t.netWorth.totalAssets} value={fmt$(totalA)} tone="text-emerald-600" />
-        <SummaryCard label={t.netWorth.totalLiabilities} value={fmt$(totalL)} tone="text-red-500" />
+        <SummaryCard label={ct("netWorth.netWorth")} value={fmt$(netWorth)} tone={netWorth >= 0 ? "text-slate-900" : "text-red-500"} />
+        <SummaryCard label={ct("netWorth.totalAssets")} value={fmt$(totalA)} tone="text-emerald-600" />
+        <SummaryCard label={ct("netWorth.totalLiabilities")} value={fmt$(totalL)} tone="text-red-500" />
       </div>
 
       {/* ── Main grid ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-6 flex-1 min-h-0 h-full">
 
         {/* ── Left 2/3 ───────────────────────────────────────────────────── */}
-        <div className="col-span-2 space-y-4 overflow-y-auto min-h-0 h-full pr-2 pb-20">
+        <div className="col-span-2 space-y-4 overflow-y-auto min-h-0 h-full pr-2">
 
           {/* Action bar */}
           <div className="flex items-center justify-between">
@@ -642,20 +932,20 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                 onClick={() => addDraft("asset")}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
               >
-                <Plus className="w-4 h-4" />{t.netWorth.addAsset}
+                <Plus className="w-4 h-4" />{ct("netWorth.addAsset")}
               </button>
               <button
                 onClick={() => addDraft("liability")}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
               >
-                <Plus className="w-4 h-4" />{t.netWorth.addLiability}
+                <Plus className="w-4 h-4" />{ct("netWorth.addLiability")}
               </button>
             </div>
             <button
               onClick={() => setVoiceOpen(isAssets ? "asset" : "liability")}
               className="flex items-center gap-1.5 text-xs text-slate-500 border border-slate-200 px-3 py-1.5 rounded-full hover:border-cyan-400 hover:text-cyan-500 transition-colors"
             >
-              <Mic className="w-3.5 h-3.5" /> {t.netWorth.voice}
+              <Mic className="w-3.5 h-3.5" /> Voice
             </button>
           </div>
 
@@ -663,15 +953,15 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
           {activeDrafts.length > 0 && (
             <div className="bg-white border border-cyan-200 rounded-2xl overflow-hidden shadow-sm">
               <div className="px-5 py-3 bg-cyan-50 border-b border-cyan-100 flex items-center justify-between">
-                <span className="text-sm font-semibold text-cyan-700">{isAssets ? t.netWorth.newAssets : t.netWorth.newLiabilities}</span>
+                <span className="text-sm font-semibold text-cyan-700">{ct(isAssets ? "netWorth.newAssets" : "netWorth.newLiabilities")}</span>
                 <div className="flex gap-2">
                   <button onClick={() => setDrafts([])} className="text-xs text-slate-400 px-3 py-1 border border-slate-200 rounded-lg hover:bg-white transition-colors">
-                    {t.debt.discardAll}
+                    Discard All
                   </button>
                   <button onClick={saveAll} disabled={saving}
                     className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0c1e3a] px-3 py-1 rounded-lg disabled:opacity-50 hover:bg-[#0e2a4a] transition-colors"
                   >
-                    <Save className="w-3 h-3" /> {saving ? t.common.savingEllipsis : `Save ${drafts.filter(isDraftSavable).length} Entries`}
+                    <Save className="w-3 h-3" /> {saving ? "Saving…" : `Save ${drafts.filter(isDraftSavable).length} Entries`}
                   </button>
                 </div>
               </div>
@@ -681,33 +971,64 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                   <div key={ri} className="px-5 py-4 border-b border-slate-50 last:border-0">
                     <div className="grid grid-cols-4 gap-3 mb-2">
                       <div>
-                        <label className={LABEL_CLS}>{t.common.owner}</label>
+                        <label className={LABEL_CLS}>Owner</label>
                         <select value={d.owner} onChange={e => updateDraft(draftIdx, "owner", e.target.value)} className={SELECT_CLS}>
-                          <option value="primary">{primaryName || t.common.primary}</option>
+                          <option value="primary">{primaryName || "Primary"}</option>
                           {spouseName && <option value="spouse">{spouseName}</option>}
-                          {spouseName && <option value="joint">{t.common.joint}</option>}
+                          {spouseName && <option value="joint">Joint</option>}
                         </select>
                       </div>
                       <div>
-                        <label className={LABEL_CLS}>{t.common.category}</label>
+                        <label className={LABEL_CLS}>Category</label>
                         <select value={d.category} onChange={e => updateDraft(draftIdx, "category", e.target.value)} className={SELECT_CLS}>
-                          {activeCats.map(c => <option key={c} value={c}>{assetCatLabel(c, t)}</option>)}
+                          {activeCats.map(c => <option key={c}>{c}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className={LABEL_CLS}>{t.common.name} / {t.common.notes}</label>
-                        <InlineInput value={d.name} onChange={v => updateDraft(draftIdx, "name", v)} placeholder={d.category} />
+                        <label className={LABEL_CLS}>Name / Description</label>
+                        <InlineInput
+                          value={d.holdingType === "Mutual Funds" ? (d.funds.length > 0 ? `${d.funds.length} fund${d.funds.length > 1 ? "s" : ""} selected` : "") : d.name}
+                          onChange={v => updateDraft(draftIdx, "name", v)}
+                          placeholder={d.holdingType === "Mutual Funds" ? "Funds selected below ↓" : d.category}
+                          className={d.holdingType === "Mutual Funds" ? "bg-slate-50 text-slate-400 cursor-default" : ""}
+                          // read-only display when mutual funds mode — actual input is MultiFundSelector
+                        />
                       </div>
                       <div>
-                        <label className={LABEL_CLS}>{isAssets ? t.netWorth.marketValue : t.netWorth.balanceOwing}</label>
+                        <label className={LABEL_CLS}>{isAssets ? ct("netWorth.marketValue") : ct("netWorth.balanceOwing")}</label>
                         <div className="flex gap-1">
-                          <InlineInput type="number" value={d.value} onChange={v => updateDraft(draftIdx, "value", v)} placeholder="0" />
+                          <InlineInput
+                            type="number"
+                            value={d.holdingType === "Mutual Funds"
+                              ? String(d.funds.reduce((s, h) => s + (Number(h.value) || 0), 0) || "")
+                              : d.value}
+                            onChange={v => {
+                              if (d.holdingType !== "Mutual Funds") updateDraft(draftIdx, "value", v);
+                            }}
+                            placeholder={d.holdingType === "Mutual Funds" ? "Auto from funds" : "0"}
+                            className={d.holdingType === "Mutual Funds" ? "bg-slate-50 text-slate-500 cursor-default" : ""}
+                          />
                           <button onClick={() => removeDraft(draftIdx)} className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0">
                             <X className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
                     </div>
+                    {/* Multi-fund selector — spans full width when holding type is Mutual Funds */}
+                    {d.holdingType === "Mutual Funds" && (
+                      <div className="grid grid-cols-4 gap-3 mt-1">
+                        <MultiFundSelector
+                          holdings={d.funds}
+                          onChange={holdings => {
+                            const total = holdings.reduce((s, h) => s + (Number(h.value) || 0), 0);
+                            setDrafts(prev => prev.map((x, idx) => idx === draftIdx
+                              ? { ...x, funds: holdings, value: total > 0 ? String(total) : x.value }
+                              : x
+                            ));
+                          }}
+                        />
+                      </div>
+                    )}
                     {!isAssets && (
   <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mt-1">
     <input
@@ -719,7 +1040,7 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
     Include in Debt Tracker
   </label>
 )}
-                    <ExtraFields draft={d} onChange={(k, v) => updateDraft(draftIdx, k, v)} spouseName={spouseName} dependants={[]} t={t} />
+                    <ExtraFields draft={d} onChange={(k, v) => updateDraft(draftIdx, k, v)} spouseName={spouseName} dependants={[]} />
                   </div>
                 );
               })}
@@ -744,28 +1065,60 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                     <div key={e.id} className="px-5 py-4 bg-slate-50 border-b border-slate-100">
                       <div className="grid grid-cols-4 gap-3 mb-2">
                         <div>
-                          <label className={LABEL_CLS}>{t.common.owner}</label>
+                          <label className={LABEL_CLS}>Owner</label>
                           <select value={editForm.owner ?? "primary"} onChange={ev => setEditForm(f => ({ ...f, owner: ev.target.value }))} className={SELECT_CLS}>
-                            <option value="primary">{primaryName || t.common.primary}</option>
+                            <option value="primary">{primaryName || "Primary"}</option>
                             {spouseName && <option value="spouse">{spouseName}</option>}
-                            {spouseName && <option value="joint">{t.common.joint}</option>}
+                            {spouseName && <option value="joint">Joint</option>}
                           </select>
                         </div>
                         <div>
-                          <label className={LABEL_CLS}>{t.common.category}</label>
+                          <label className={LABEL_CLS}>Category</label>
                           <select value={editForm.category ?? ""} onChange={ev => setEditForm(f => ({ ...f, category: ev.target.value }))} className={SELECT_CLS}>
                             {activeCats.map(c => <option key={c}>{c}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className={LABEL_CLS}>{t.common.name}</label>
-                          <InlineInput value={editForm.name ?? ""} onChange={v => setEditForm(f => ({ ...f, name: v }))} placeholder={editForm.category} />
+                          <label className={LABEL_CLS}>Name / Description</label>
+                          <InlineInput
+                            value={editForm.holdingType === "Mutual Funds"
+                              ? ((editForm as any).funds?.length > 0 ? `${(editForm as any).funds.length} fund${(editForm as any).funds.length > 1 ? "s" : ""} selected` : "")
+                              : (editForm.name ?? "")}
+                            onChange={v => { if (editForm.holdingType !== "Mutual Funds") setEditForm(f => ({ ...f, name: v })); }}
+                            placeholder={editForm.holdingType === "Mutual Funds" ? "Funds selected below ↓" : editForm.category}
+                            className={editForm.holdingType === "Mutual Funds" ? "bg-slate-50 text-slate-400 cursor-default" : ""}
+                          />
                         </div>
                         <div>
-                          <label className={LABEL_CLS}>{isAssets ? t.netWorth.marketValue : t.netWorth.balanceOwing}</label>
-                          <InlineInput type="number" value={editForm.value ?? ""} onChange={v => setEditForm(f => ({ ...f, value: v }))} placeholder="0" />
+                          <label className={LABEL_CLS}>{isAssets ? ct("netWorth.marketValue") : ct("netWorth.balanceOwing")}</label>
+                          <InlineInput
+                            type="number"
+                            value={editForm.holdingType === "Mutual Funds"
+                              ? String(((editForm as any).funds ?? []).reduce((s: number, h: FundHolding) => s + (Number(h.value) || 0), 0) || "")
+                              : (editForm.value ?? "")}
+                            onChange={v => { if (editForm.holdingType !== "Mutual Funds") setEditForm(f => ({ ...f, value: v })); }}
+                            placeholder={editForm.holdingType === "Mutual Funds" ? "Auto from funds" : "0"}
+                            className={editForm.holdingType === "Mutual Funds" ? "bg-slate-50 text-slate-500 cursor-default" : ""}
+                          />
                         </div>
                       </div>
+                      {/* Multi-fund selector for edit form */}
+                      {editForm.holdingType === "Mutual Funds" && (
+                        <div className="mb-2">
+                          <MultiFundSelector
+                            holdings={(editForm as any).funds ?? []}
+                            onChange={funds => {
+                              const total = funds.reduce((s: number, h: FundHolding) => s + (Number(h.value) || 0), 0);
+                              setEditForm(f => ({
+                                ...f,
+                                funds,
+                                value: total > 0 ? String(total) : f.value,
+                                metadata: { ...(f.metadata ?? {}), funds },
+                              } as any));
+                            }}
+                          />
+                        </div>
+                      )}
                       {/* Extra fields for edit */}
                       <div className="flex flex-wrap gap-3 mb-3">
                         {["RRSP", "TFSA", "Non-Registered"].includes(editForm.category ?? "") && (
@@ -778,10 +1131,10 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                                 </label>
                                 {editForm.isSpousal && (
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-slate-400">{t.netWorth.contributor + ":"}</span>
+                                    <span className="text-xs text-slate-400">Contributor:</span>
                                     <select value={editForm.rrspContributor ?? ""} onChange={ev => setEditForm(f => ({ ...f, rrspContributor: ev.target.value }))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm">
                                       <option value="">Select…</option>
-                                      <option value="client">{primaryName || t.common.primary}</option>
+                                      <option value="client">{primaryName || "Client"}</option>
                                       {spouseName && <option value="spouse">{spouseName}</option>}
                                     </select>
                                   </div>
@@ -789,10 +1142,10 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                               </>
                             )}
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-slate-400">{t.netWorth.holdingType + ":"}</span>
+                              <span className="text-xs text-slate-400">Holding type:</span>
                               <select value={editForm.holdingType ?? ""} onChange={ev => setEditForm(f => ({ ...f, holdingType: ev.target.value }))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm">
                                 <option value="">Select…</option>
-                                {HOLDING_TYPES.map(h => <option key={h} value={h}>{holdingLabel(h, t)}</option>)}
+                                {HOLDING_TYPES.map(t => <option key={t}>{t}</option>)}
                               </select>
                             </div>
                             {editForm.category === "Non-Registered" && spouseName && (
@@ -806,9 +1159,9 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                         {editForm.category === "Real Estate (other)" && (
                           <>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-slate-400">{t.netWorth.propertyType + ":"}</span>
+                              <span className="text-xs text-slate-400">Property type:</span>
                               <select value={editForm.propertyType ?? "Family Occupied"} onChange={ev => setEditForm(f => ({ ...f, propertyType: ev.target.value }))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm">
-                                {PROPERTY_TYPES.map(p => <option key={p} value={p}>{propertyTypeLabel(p, t)}</option>)}
+                                {PROPERTY_TYPES.map(t => <option key={t}>{t}</option>)}
                               </select>
                             </div>
                             <div className="flex items-center gap-1.5">
@@ -831,9 +1184,9 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                         )}
                       </div>
                       <div className="flex gap-2 justify-end">
-                        <button onClick={() => { setEditingId(null); setEditForm({}); }} className="text-sm text-slate-500 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">{t.common.cancel}</button>
+                        <button onClick={() => { setEditingId(null); setEditForm({}); }} className="text-sm text-slate-500 px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
                         <button onClick={saveEdit} disabled={saving} className="text-sm font-semibold text-white bg-[#0c1e3a] px-4 py-1.5 rounded-lg disabled:opacity-50 hover:bg-[#0e2a4a] transition-colors">
-                          {saving ? t.common.savingEllipsis : t.common.save}
+                          {saving ? "Saving…" : "Save"}
                         </button>
                       </div>
                     </div>
@@ -855,9 +1208,9 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
 
           {activeRows.length === 0 && activeDrafts.length === 0 && (
             <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-sm">
-              <p className="text-slate-400 text-sm">{t.netWorth.noAssetsYet}</p>
+              <p className="text-slate-400 text-sm">No {isAssets ? "assets" : "liabilities"} added yet</p>
               <button onClick={() => addDraft(isAssets ? "asset" : "liability")} className="mt-3 text-cyan-500 text-sm hover:underline">
-                {isAssets ? t.netWorth.addFirstAsset : t.netWorth.addFirstLiability}
+                {ct("netWorth.addFirst")} {isAssets ? ct("netWorth.asset") : ct("netWorth.liability")}
               </button>
             </div>
           )}
@@ -865,7 +1218,7 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
         </div>
 
         {/* ── Right 1/3 ──────────────────────────────────────────────────── */}
-        <div className="space-y-4 overflow-y-auto min-h-0 h-full pb-20">
+        <div className="space-y-4 overflow-y-auto min-h-0 h-full">
 
           {/* Pie chart */}
           {totalA > 0 && (
@@ -896,18 +1249,18 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
 
           {/* Net Worth summary */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">{t.netWorth.summaryPanel}</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Summary</p>
             <div className="space-y-2.5">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500">{t.netWorth.totalAssets}</span>
+                <span className="text-slate-500">{ct("netWorth.totalAssets")}</span>
                 <span className="font-semibold text-emerald-600">{fmt$(totalA)}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500">{t.netWorth.totalLiabilities}</span>
+                <span className="text-slate-500">{ct("netWorth.totalLiabilities")}</span>
                 <span className="font-semibold text-red-500">{fmt$(totalL)}</span>
               </div>
               <div className="border-t border-slate-100 pt-2.5 flex justify-between items-center">
-                <span className="font-semibold text-slate-900">{t.netWorth.totalNetWorth}</span>
+                <span className="font-semibold text-slate-900">{ct("netWorth.netWorth")}</span>
                 <span className={`font-bold text-lg ${netWorth >= 0 ? "text-slate-900" : "text-red-500"}`}>
                   {fmt$(netWorth)}
                 </span>
@@ -917,7 +1270,7 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
 
           {/* Quick Add */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">{t.netWorth.quickAdd}</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Quick Add</p>
             <div className="space-y-1.5">
               {(isAssets ? NW_ASSET_CATS : NW_LIAB_CATS).map(cat => (
                 <button key={cat} onClick={() => {
@@ -928,7 +1281,7 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
                   className="w-full text-left text-xs text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2"
                 >
                   {isAssets && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: NW_ASSET_COLORS[cat] ?? "#94a3b8" }} />}
-                  + {assetCatLabel(cat, t)}
+                  + {cat}
                 </button>
               ))}
             </div>
@@ -940,16 +1293,16 @@ export function NetWorthTab({ clientId, client, t }: { clientId: number; t: T; c
       {/* Voice dialog */}
       {voiceOpen && (
         <VoiceAddDialog
-          title={`Voice-Add ${voiceOpen === "asset" ? "Asset" : t.common.liability}`}
+          title={`Voice-Add ${voiceOpen === "asset" ? "Asset" : "Liability"}`}
           moduleId={`net-worth-${voiceOpen}`}
           prompt={voiceOpen === "asset"
             ? `Try: "TFSA at TD worth twenty-five thousand, jointly with spouse"`
             : `Try: "RBC mortgage balance 320 thousand, monthly payment 1850"`}
           fieldSchema={[
-            { key: "category", label: t.common.category, description: `Type of ${voiceOpen}`, enum: voiceOpen === "asset" ? NW_ASSET_CATS : NW_LIAB_CATS },
-            { key: "name", label: t.common.name, description: "Description" },
-            { key: "value", label: voiceOpen === "asset" ? "Value" : t.common.balance, description: "Amount in dollars" },
-            { key: "owner", label: t.common.owner, description: "Who owns it", enum: ["primary", "spouse", "joint"] },
+            { key: "category", label: "Category", description: `Type of ${voiceOpen}`, enum: voiceOpen === "asset" ? NW_ASSET_CATS : NW_LIAB_CATS },
+            { key: "name", label: "Name", description: "Description" },
+            { key: "value", label: voiceOpen === "asset" ? "Value" : "Balance", description: "Amount in dollars" },
+            { key: "owner", label: "Owner", description: "Who owns it", enum: ["primary", "spouse", "joint"] },
             ...(voiceOpen === "liability" ? [{ key: "monthlyPayment", label: "Monthly Pmt", description: "Monthly payment" }] : []),
           ]}
           onConfirm={(parsed: Record<string, string>) => { addVoiceDraft(voiceOpen, parsed); setVoiceOpen(null); }}
@@ -1009,15 +1362,13 @@ type RetDraft = {
 };
 
 export function RetirementTab({ clientId, client, person = "primary" }: { clientId: number; client?: any; person?: string }) {
-  const { locale } = useLocale();
-  const t = translations[locale as "en"|"fr"] ?? translations.en;
   const calcAge = useCallback((dob: string | null) => 
   dob ? Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null
 , []);
   const clientAge = calcAge(client?.dateOfBirth);
   const spouseAge = calcAge(client?.spouseDateOfBirth);
-  const clientName = client ? client.firstName : t.common.primary;
-  const spouseName = client?.spouseFirstName ?? t.common.spouse;
+  const clientName = client ? client.firstName : "Primary";
+  const spouseName = client?.spouseFirstName ?? "Spouse";
   const isSpouse   = person === "spouse";
   const isCouple   = person === "combined";
   const activeAge  = isSpouse ? spouseAge : clientAge;
@@ -1062,7 +1413,7 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
     if (!rows.length || !client) return;
     const updates: Promise<any>[] = [];
     rows.forEach(r => {
-      const isSpouseRow = r.label === client.spouseFirstName || (r.label === "Spouse" || r.label === t.common.spouse);
+      const isSpouseRow = r.label === client.spouseFirstName || r.label === "Spouse";
       const correctRetAge = isSpouseRow
         ? (client.spouseRetirementAge ?? 65)
         : (client.retirementAge ?? 65);
@@ -1187,7 +1538,7 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
   }
 
   async function del(id: number) {
-    if (!confirm(t.netWorth.deleteProjection)) return;
+    if (!confirm("Delete projection?")) return;
     await api.delete(`/api/retirement/${id}`);
     await load();
   }
@@ -1204,13 +1555,13 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
 
   // Filter rows and drafts by person
   const filteredRows = rows.filter(r => {
-    if (person === "primary")  return !r.label?.includes("&") && r.label !== spouseName && r.label !== t.common.spouse;
-    if (person === "spouse")   return r.label === spouseName || (r.label === "Spouse" || r.label === t.common.spouse);
+    if (person === "primary")  return !r.label?.includes("&") && r.label !== spouseName && r.label !== "Spouse";
+    if (person === "spouse")   return r.label === spouseName || r.label === "Spouse";
     return true; // combined shows all
   });
   const filteredDrafts = drafts.filter(d => {
-    if (person === "primary")  return !d.label?.includes("&") && d.label !== spouseName && d.label !== t.common.spouse;
-    if (person === "spouse")   return d.label === spouseName || (d.label === "Spouse" || (d.label === "Spouse" || d.label === t.common.spouse));
+    if (person === "primary")  return !d.label?.includes("&") && d.label !== spouseName && d.label !== "Spouse";
+    if (person === "spouse")   return d.label === spouseName || d.label === "Spouse";
     return true;
   });
 
@@ -1228,7 +1579,7 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
   const labelColor = (label: string | null) => {
     if (!label) return "text-blue-600";
     if (label.includes("&")) return "text-indigo-600";
-    if (label === spouseName || (label === "Spouse" || label === t.common.spouse)) return "text-pink-600";
+    if (label === spouseName || label === "Spouse") return "text-pink-600";
     return "text-blue-600";
   };
 
@@ -1239,7 +1590,7 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
         {(["projections","drawdown"] as const).map(key => (
           <button key={key} onClick={() => setActiveSubTab(key)}
             className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors ${activeSubTab === key ? "bg-white border border-b-white border-gray-200 text-[#0c1e3a] -mb-px" : "text-gray-500 hover:text-gray-700"}`}>
-            {key === "projections" ? t.netWorth.retirementProjections : t.netWorth.drawdownStrategies}
+            {key === "projections" ? "Retirement Projections" : "Drawdown Strategies"}
           </button>
         ))}
       </div>
@@ -1247,11 +1598,11 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
       {activeSubTab === "projections" && (
       <div>
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-xl font-bold text-gray-900">{t.netWorth.retirementProjections}</h2>
+        <h2 className="text-xl font-bold text-gray-900">Retirement Projections</h2>
         <div className="flex gap-2">
           <button onClick={runSim} disabled={simulating}
             className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-1.5 rounded-lg">
-            {simulating ? t.common.running : t.netWorth.retirementCheckup}
+            {simulating ? "Running..." : "Retirement Checkup"}
           </button>
           <button onClick={addDraft}
             className="flex items-center gap-1.5 text-sm font-semibold text-white bg-[#0c1e3a] hover:bg-[#0e2a4a] px-3 py-1.5 rounded-lg">
@@ -1271,7 +1622,7 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
               </div>
               <div className="grid grid-cols-3 gap-3">
                 {([
-                  [t.common.primary,"label","text"],["Current Age","currentAge","number"],["Retirement Age","retirementAge","number"],
+                  ["Client","label","text"],["Current Age","currentAge","number"],["Retirement Age","retirementAge","number"],
                   ["RRSP Balance","rrspBalance","number"],["TFSA Balance","tfsaBalance","number"],["Non-Reg Balance","nonRegBalance","number"],
                   ["Annual Contribution","annualContribution","number"],["Expected Return %","expectedReturn","number"],["Desired Income","desiredRetirementIncome","number"],
                   ["CPP Monthly","cppMonthly","number"],["OAS Monthly","oasMonthly","number"],
@@ -1312,10 +1663,10 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
             );
           })}
           <div className="flex justify-end gap-2">
-            <button onClick={() => { setDrafts([]); setEditingId(null); }} className="text-sm text-gray-500 px-4 py-2 border border-gray-200 rounded-lg">{t.common.cancel}</button>
+            <button onClick={() => { setDrafts([]); setEditingId(null); }} className="text-sm text-gray-500 px-4 py-2 border border-gray-200 rounded-lg">Cancel</button>
             <button onClick={saveAll} disabled={saving}
               className="flex items-center gap-1.5 bg-[#0c1e3a] hover:bg-[#0e2a4a] disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg">
-              <Save className="w-3.5 h-3.5" /> {saving ? t.common.saving2 : editingId ? t.common.saveChanges : `Save ${drafts.length} Projection${drafts.length > 1 ? "s" : ""}`}
+              <Save className="w-3.5 h-3.5" /> {saving ? "Saving..." : editingId ? "Save Changes" : `Save ${drafts.length} Projection${drafts.length > 1 ? "s" : ""}`}
             </button>
           </div>
         </div>
@@ -1379,19 +1730,19 @@ export function RetirementTab({ clientId, client, person = "primary" }: { client
                           <p className="text-[10px] text-blue-400 mt-0.5">CPP + OAS + portfolio</p>
                         </div>
                         <div className="bg-purple-50 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-purple-600 uppercase">{t.retirement.desiredIncome}</p>
+                          <p className="text-[10px] font-bold text-purple-600 uppercase">Desired Income</p>
                           <p className="text-lg font-bold text-purple-700">{hasDesired ? `${fmt$(desired)}/yr` : "—"}</p>
                           <p className="text-[10px] text-purple-400 mt-0.5">retirement target</p>
                         </div>
                         <div className={`rounded-xl p-3 ${!hasDesired ? "bg-gray-50" : gap >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
                           <p className={`text-[10px] font-bold uppercase ${!hasDesired ? "text-gray-400" : gap >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                            {!hasDesired ? t.common.shortfall : gap >= 0 ? t.common.surplus : t.common.shortfall}
+                            {!hasDesired ? "Shortfall" : gap >= 0 ? "Surplus" : "Shortfall"}
                           </p>
                           <p className={`text-lg font-bold ${!hasDesired ? "text-gray-400" : gap >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                             {!hasDesired ? "—" : `${gap >= 0 ? "+" : ""}${fmt$(gap)}/yr`}
                           </p>
                           <p className={`text-[10px] mt-0.5 ${!hasDesired ? "text-gray-300" : gap >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                            {!hasDesired ? t.retirement.setDesiredIncome : t.retirement.perYear}
+                            {!hasDesired ? "set desired income" : "per year"}
                           </p>
                         </div>
                         <div className="bg-gray-50 rounded-xl p-3">
@@ -1462,8 +1813,6 @@ type InsDraft = { method: string; annualIncome: string; yearsToReplace: string; 
 const emptyIns = (): InsDraft => ({ method:"dime", annualIncome:"", yearsToReplace:"20", existingLifeCoverage:"", existingDisability:"", existingCriticalIllness:"", notes:"" });
 
 export function InsuranceTab({ clientId }: { clientId: number }) {
-  const { locale } = useLocale();
-  const t = translations[locale as "en"|"fr"] ?? translations.en;
   const [rows, setRows]     = useState<InsuranceRec[]>([]);
   const [drafts, setDrafts] = useState<InsDraft[]>([]);
   const [saving, setSaving] = useState(false);
@@ -1486,7 +1835,7 @@ export function InsuranceTab({ clientId }: { clientId: number }) {
  
 
   async function del(id: number) {
-    if (!confirm(t.common.deleteConfirm)) return;
+    if (!confirm("Delete?")) return;
     await api.delete(`/api/insurance/${id}`); await load();
   }
 
@@ -1534,7 +1883,7 @@ export function InsuranceTab({ clientId }: { clientId: number }) {
           <button onClick={() => setDrafts([])} className="text-sm text-gray-500 px-4 py-2 border border-gray-200 rounded-lg">Discard</button>
           <button onClick={saveAll} disabled={saving}
             className="flex items-center gap-1.5 bg-[#0c1e3a] hover:bg-[#0e2a4a] disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg">
-            <Save className="w-3.5 h-3.5" /> {saving ? t.common.savingEllipsis : `Save ${drafts.length} Analysis`}
+            <Save className="w-3.5 h-3.5" /> {saving ? "Saving…" : `Save ${drafts.length} Analysis`}
           </button>
         </div>
       )}
@@ -1550,9 +1899,9 @@ export function InsuranceTab({ clientId }: { clientId: number }) {
               <button onClick={() => del(a.id)} className="text-gray-300 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
             </div>
             <div className="grid grid-cols-3 gap-4">
-              {[[t.netWorth.lifeInsurance,"existingLifeCoverage","recommendedLife","lifeGap"],
-                [t.insurance.disability,"existingDisability","recommendedDisability","disabilityGap"],
-                [t.insurance.criticalIllness,"existingCriticalIllness","recommendedCriticalIllness","criticalIllnessGap"]].map(([title,ex,rec,gap]) => (
+              {[["Life Insurance","existingLifeCoverage","recommendedLife","lifeGap"],
+                ["Disability","existingDisability","recommendedDisability","disabilityGap"],
+                ["Critical Illness","existingCriticalIllness","recommendedCriticalIllness","criticalIllnessGap"]].map(([title,ex,rec,gap]) => (
                 <div key={title} className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs font-bold text-gray-400 uppercase mb-2">{title}</p>
                   <div className="space-y-1 text-xs">
@@ -1576,7 +1925,7 @@ type EduDraft = { childName: string; childDob: string; currentRespBalance: strin
 const emptyEdu = (): EduDraft => ({ childName:"", childDob:"", currentRespBalance:"", annualContribution:"2500", targetAmount:"", notes:"" });
 
 // Dark-themed education sub-tab used inside the Net Worth hub
-function EducationSubTab({ clientId, client, t = translations.en }: { clientId: number; client?: any; t?: T }) {
+function EducationSubTab({ clientId, client }: { clientId: number; client?: any }) {
   const [rows, setRows]     = useState<EduPlan[]>([]);
   const [drafts, setDrafts] = useState<EduDraft[]>([]);
   const [saving, setSaving] = useState(false);
@@ -1629,7 +1978,7 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
   }
 
   async function del(id: number) {
-    if (!confirm(t.common.deleteConfirm)) return;
+    if (!confirm("Delete?")) return;
     await api.delete(`/api/education/${id}`); await load();
   }
 
@@ -1649,11 +1998,11 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 gap-3 mt-5 mb-5">
         <div className="fp-insightled-card p-4">
-          <p className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-1">{t.netWorth.eduTotalRESP}</p>
+          <p className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-1">Total RESP Balance</p>
           <p className="text-2xl font-bold text-[var(--accent-cyan)] font-mono">{fmt$(totalResp)}</p>
         </div>
         <div className="fp-insightled-card p-4">
-          <p className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-1">{t.netWorth.eduTotalTarget}</p>
+          <p className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-1">Total Target</p>
           <p className="text-2xl font-bold text-[var(--text-primary)] font-mono">{totalTarget ? fmt$(totalTarget) : "—"}</p>
         </div>
       </div>
@@ -1661,14 +2010,14 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
       {/* Table header */}
       <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden">
         <div className="px-4 py-3 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-card)]">
-          <h3 className="font-semibold text-[var(--text-primary)] text-sm">{t.netWorth.educationPlansTitle}</h3>
+          <h3 className="font-semibold text-[var(--text-primary)] text-sm">Children's Education Plans</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setVoiceOpen(true)}
-              title={t.netWorth.voiceAddChild}
+              title="Voice add child"
               className="flex items-center gap-1.5 px-3 py-2 rounded-full border border-[var(--border-light)] text-[var(--text-secondary)] hover:text-[var(--accent-cyan)] hover:border-[var(--accent-cyan)] text-xs font-semibold transition-colors"
             >
-              <Mic className="w-3.5 h-3.5" /> {t.netWorth.voice}
+              <Mic className="w-3.5 h-3.5" /> Voice
             </button>
             <button
               onClick={addDraft}
@@ -1681,14 +2030,14 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
 
         {voiceOpen && (
           <VoiceAddDialog
-            title={t.common.voiceAddEduc}
+            title="Voice-Add Education Plan"
             moduleId="education-plan"
             prompt={`Try: "Sarah, born June 12 2015, RESP balance 12 thousand, contributing twenty-five hundred a year, target sixty thousand"`}
             fieldSchema={[
-              { key: "childName",          label: t.netWorth.childName, description: "Full first name" },
+              { key: "childName",          label: "Child Name", description: "Full first name" },
               { key: "childDob",           label: "DOB",        description: "Date of birth (YYYY-MM-DD)" },
-              { key: "currentRespBalance", label: t.netWorth.respBalance, description: "Current RESP balance, number only" },
-              { key: "annualContribution", label: t.netWorth.annualContribNum, description: "Annual contribution, number only" },
+              { key: "currentRespBalance", label: "RESP Balance", description: "Current RESP balance, number only" },
+              { key: "annualContribution", label: "Annual Contrib", description: "Annual contribution, number only" },
               { key: "targetAmount",       label: "Target", description: "Target amount, number only" },
               { key: "notes",              label: "Notes", description: "Free-form notes" },
             ]}
@@ -1700,7 +2049,7 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
         <table className="w-full text-sm">
           <thead className="bg-[var(--bg-card)]/60 border-b border-[var(--border-subtle)]">
             <tr>
-              {[t.netWorth.eduChild, t.netWorth.eduDOB, t.netWorth.eduRESPBalance, t.netWorth.eduAnnualContrib, t.netWorth.eduTarget, "CESG", t.netWorth.eduProjected, t.common.notes, ""].map(h => (
+              {["Child", "Date of Birth", "RESP Balance", "Annual Contrib", "Target", "CESG", "Projected", "Notes", ""].map(h => (
                 <th key={h} className="text-left px-3 py-2 text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -1764,7 +2113,7 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
             {rows.length === 0 && drafts.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-4 py-8 text-center text-[var(--text-tertiary)] text-sm">
-                  {t.netWorth.noEducationPlans}
+                  No education plans yet — click <span className="text-[var(--accent-cyan)]">Add Child</span> to get started
                 </td>
               </tr>
             )}
@@ -1780,7 +2129,7 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
           </button>
           <button onClick={saveAll} disabled={saving || !drafts.some(d => d.childName)}
             className="flex items-center gap-1.5 bg-[var(--accent-cyan)] text-[var(--bg-base)] text-sm font-semibold px-5 py-2 rounded-lg disabled:opacity-50 hover:bg-[var(--accent-cyan)]/90 transition-colors">
-            <Save className="w-3.5 h-3.5" /> {saving ? t.common.savingEllipsis : `Save ${drafts.filter(d=>d.childName).length} Child${drafts.filter(d=>d.childName).length !== 1 ? "ren" : ""}`}
+            <Save className="w-3.5 h-3.5" /> {saving ? "Saving…" : `Save ${drafts.filter(d=>d.childName).length} Child${drafts.filter(d=>d.childName).length !== 1 ? "ren" : ""}`}
           </button>
         </div>
       )}
@@ -1789,8 +2138,8 @@ function EducationSubTab({ clientId, client, t = translations.en }: { clientId: 
 }
 
 /** @deprecated Use EducationSubTab (rendered inside NetWorthTab) instead. Kept for API compatibility. */
-export function RespTab({ clientId, client, t = translations.en }: { clientId: number; client?: any; t?: T }) {
-  return <EducationSubTab clientId={clientId} client={client} t={t} />;
+export function RespTab({ clientId, client }: { clientId: number; client?: any }) {
+  return <EducationSubTab clientId={clientId} client={client} />;
 }
 
 // ── DEBT ──────────────────────────────────────────────────────────────────────
@@ -1798,7 +2147,7 @@ interface DebtEntry { id: number; name: string; type: string; category?: string;
 type DebtDraft = { name: string; type: string; balance: string; interestRate: string; minimumPayment: string; payoffStrategy: string; notes: string; };
 const emptyDebt = (): DebtDraft => ({ name:"", type:"credit_card", balance:"", interestRate:"", minimumPayment:"", payoffStrategy:"avalanche", notes:"" });
 
-export function DebtTab({ clientId, t }: { clientId: number; t: T }) {
+export function DebtTab({ clientId }: { clientId: number }) {
   const [rows, setRows]     = useState<DebtEntry[]>([]);
   const [drafts, setDrafts] = useState<DebtDraft[]>([]);
   const [saving, setSaving] = useState(false);
@@ -1821,7 +2170,7 @@ export function DebtTab({ clientId, t }: { clientId: number; t: T }) {
   }
 
   async function del(id: number) {
-    if (!confirm(t.common.deleteConfirm)) return;
+    if (!confirm("Delete?")) return;
     await api.delete(`/api/debt/${id}`); await load();
   }
 
@@ -1829,12 +2178,12 @@ export function DebtTab({ clientId, t }: { clientId: number; t: T }) {
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">{t.debt.debtCashFlow}</h2>
+          <h2 className="text-xl font-bold text-gray-900">Debt &amp; Cash Flow</h2>
           {rows.length > 0 && <p className="text-sm font-bold text-red-500">Total: {fmt$(totalDebt)}</p>}
         </div>
         <button onClick={() => setDrafts(d => [...d, emptyDebt()])}
           className="flex items-center gap-1.5 text-sm font-semibold text-white bg-[#0c1e3a] hover:bg-[#0e2a4a] px-3 py-1.5 rounded-lg">
-          <Plus className="w-3.5 h-3.5" /> {t.debt.addDebt}
+          <Plus className="w-3.5 h-3.5" /> Add Debt
         </button>
       </div>
      <DebtDashboard rows={rows} />
@@ -1842,44 +2191,44 @@ export function DebtTab({ clientId, t }: { clientId: number; t: T }) {
       {drafts.length > 0 && (
         <Card className="mb-5 border-blue-200 bg-blue-50/20">
           <div className="p-3 border-b border-blue-100">
-            <h3 className="font-bold text-gray-800 text-sm">{t.debt.newDebtsHint}</h3>
+            <h3 className="font-bold text-gray-800 text-sm">New Debts — add as many as needed, then save all at once</h3>
           </div>
           <table className="w-full text-sm">
             <thead className="bg-blue-50 border-b border-blue-100">
-              <tr><TH>{t.debt.colName}</TH><TH>{t.debt.colType}</TH><TH>{t.debt.colBalance}</TH><TH>{t.debt.colRate}</TH><TH>{t.debt.colMinPayment}</TH><TH>{t.debt.colStrategy}</TH><TH></TH></tr>
+              <tr><TH>Name</TH><TH>Type</TH><TH>Balance ($)</TH><TH>Rate (%)</TH><TH>Min Payment ($)</TH><TH>Strategy</TH><TH></TH></tr>
             </thead>
             <tbody className="divide-y divide-blue-100">
               {drafts.map((d, i) => (
                 <tr key={i}>
                   <TD><InlineInput value={d.name} onChange={v => updateDraft(i,"name",v)} placeholder="e.g. TD Visa" /></TD>
-                  <TD><InlineSelect value={d.type} onChange={v => updateDraft(i,"type",v)} options={DEBT_TYPES} labelMap={Object.fromEntries(DEBT_TYPES.map(dt => [dt, debtTypeLabel(dt, t)]))} /></TD>
+                  <TD><InlineSelect value={d.type} onChange={v => updateDraft(i,"type",v)} options={DEBT_TYPES} /></TD>
                   <TD><InlineInput value={d.balance} onChange={v => updateDraft(i,"balance",v)} type="number" /></TD>
                   <TD><InlineInput value={d.interestRate} onChange={v => updateDraft(i,"interestRate",v)} type="number" /></TD>
                   <TD><InlineInput value={d.minimumPayment} onChange={v => updateDraft(i,"minimumPayment",v)} type="number" /></TD>
-                  <TD><InlineSelect value={d.payoffStrategy} onChange={v => updateDraft(i,"payoffStrategy",v)} options={["avalanche","snowball"]} labelMap={{ avalanche: t.debt.stratAvalanche, snowball: t.debt.stratSnowball }} /></TD>
+                  <TD><InlineSelect value={d.payoffStrategy} onChange={v => updateDraft(i,"payoffStrategy",v)} options={["avalanche","snowball"]} /></TD>
                   <TD><button onClick={() => setDrafts(x => x.filter((_,idx)=>idx!==i))} className="text-gray-300 hover:text-red-500"><X className="w-3.5 h-3.5" /></button></TD>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="flex justify-end gap-2 p-3">
-            <button onClick={() => setDrafts([])} className="text-sm text-gray-500 px-4 py-2 border border-gray-200 rounded-lg">{t.debt.discard}</button>
+            <button onClick={() => setDrafts([])} className="text-sm text-gray-500 px-4 py-2 border border-gray-200 rounded-lg">Discard</button>
             <button onClick={saveAll} disabled={saving || !drafts.some(d => d.name && d.balance)}
               className="flex items-center gap-1.5 bg-[#0c1e3a] hover:bg-[#0e2a4a] disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg">
-              <Save className="w-3.5 h-3.5" /> {saving ? t.common.saving : `${t.debt.saveDebts} ${drafts.filter(d=>d.name&&d.balance).length}`}
+              <Save className="w-3.5 h-3.5" /> {saving ? "Saving…" : `Save ${drafts.filter(d=>d.name&&d.balance).length} Debts`}
             </button>
           </div>
         </Card>
       )}
 
       {rows.length === 0 && drafts.length === 0 && (
-        <Card className="p-8 text-center text-gray-400">{t.debt.noDebtsYet}</Card>
+        <Card className="p-8 text-center text-gray-400">No debts recorded yet.</Card>
       )}
       {rows.length > 0 && (
         <Card>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
-              <tr><TH>{t.debt.colName}</TH><TH>{t.debt.colType}</TH><TH>{t.common.balance}</TH><TH>{t.common.rate}</TH><TH>{t.debt.colMinPayment}</TH><TH>{t.debt.colStrategy}</TH><TH></TH></tr>
+              <tr><TH>Name</TH><TH>Type</TH><TH>Balance</TH><TH>Rate</TH><TH>Min Payment</TH><TH>Strategy</TH><TH></TH></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {rows.map(d => (

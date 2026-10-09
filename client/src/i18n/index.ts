@@ -1,7 +1,7 @@
 /**
  * client/src/i18n/index.ts
  *
- * i18next setup for Compass Planning bilingual support (EN / FR-CA).
+ * i18next setup for Compass Planning Advisor Edition bilingual support (EN / FR-CA).
  * French is forced for advisors whose province is QC.
  * All other provinces default to English but can toggle manually.
  */

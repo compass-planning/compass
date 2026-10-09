@@ -122,18 +122,22 @@
 .fp-insightled .bg-violet-50  { background-color: rgba(167, 139, 250, 0.10) !important; }
 .fp-insightled .bg-indigo-50  { background-color: rgba(99, 102, 241, 0.10) !important; }
 
-/* Legacy KoC navy buttons — re-skin to the new brand gradient */
+/* Legacy sidebar purple/navy buttons — re-skin to the Compass Planning brand gradient */
+.fp-insightled .bg-\[\#2d1b69\],
 .fp-insightled .bg-\[\#0c1e3a\],
 .fp-insightled .bg-\[\#0e2a4a\] {
-  background-image: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%) !important;
+  background-image: linear-gradient(90deg, #7c3aed 0%, #a78bfa 100%) !important;
   background-color: transparent !important;
   color: #ffffff !important;
 }
+.fp-insightled .hover\:bg-\[\#2d1b69\]:hover,
 .fp-insightled .hover\:bg-\[\#0e2a4a\]:hover {
-  background-image: linear-gradient(90deg, #1d4ed8 0%, #0891b2 100%) !important;
+  background-image: linear-gradient(90deg, #6d28d9 0%, #8b5cf6 100%) !important;
 }
-.fp-insightled .text-\[\#0c1e3a\]   { color: #2563eb !important; }
-.fp-insightled .border-\[\#0c1e3a\] { border-color: #2563eb !important; }
+.fp-insightled .text-\[\#2d1b69\]   { color: #7c3aed !important; }
+.fp-insightled .text-\[\#0c1e3a\]   { color: #7c3aed !important; }
+.fp-insightled .border-\[\#2d1b69\] { border-color: #7c3aed !important; }
+.fp-insightled .border-\[\#0c1e3a\] { border-color: #7c3aed !important; }
 
 /* Inputs — refined chrome (cyan focus ring) */
 .fp-insightled input[type="text"],

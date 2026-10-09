@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 44" fill="none">
+  <!-- Compass needle icon -->
+  <g transform="translate(4, 4)">
+    <circle cx="18" cy="18" r="17" stroke="white" stroke-width="1.5" stroke-opacity="0.3"/>
+    <circle cx="18" cy="18" r="3" fill="#a78bfa"/>
+    <!-- N needle (up, purple) -->
+    <polygon points="18,3 15,18 21,18" fill="#a78bfa"/>
+    <!-- S needle (down, white dim) -->
+    <polygon points="18,33 15,18 21,18" fill="white" fill-opacity="0.3"/>
+    <!-- tick marks -->
+    <line x1="18" y1="3" x2="18" y2="6" stroke="white" stroke-opacity="0.5" stroke-width="1.5"/>
+    <line x1="18" y1="30" x2="18" y2="33" stroke="white" stroke-opacity="0.5" stroke-width="1.5"/>
+    <line x1="3" y1="18" x2="6" y2="18" stroke="white" stroke-opacity="0.5" stroke-width="1.5"/>
+    <line x1="30" y1="18" x2="33" y2="18" stroke="white" stroke-opacity="0.5" stroke-width="1.5"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="46" y="22" font-family="Inter, -apple-system, sans-serif" font-size="13" font-weight="700" fill="white" letter-spacing="-0.3">Compass</text>
+  <text x="46" y="36" font-family="Inter, -apple-system, sans-serif" font-size="9.5" font-weight="500" fill="rgba(255,255,255,0.55)" letter-spacing="1.2">PLANNING</text>
+</svg>

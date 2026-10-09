@@ -54,11 +54,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-01`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-01`,
 
   rw02: (n, d) => `${d}
 
@@ -81,11 +81,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-02`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-02`,
 
   rw03: (n, d) => `${d}
 
@@ -108,11 +108,11 @@ Please keep this letter with your personal papers as a record of our discussion.
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-03`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-03`,
 
   rw04: (n, d) => `${d}
 
@@ -143,11 +143,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-04`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-04`,
 
   rw05: (n, d) => `${d}
 
@@ -178,11 +178,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Financial Advisor — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-05`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-05`,
 
   rw06: (n, d) => `${d}
 
@@ -213,11 +213,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-06`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-06`,
 
   rw07: (n, d) => `${d}
 
@@ -244,11 +244,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-07`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-07`,
 
   rw08: (n, d) => `${d}
 
@@ -275,11 +275,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-08`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-08`,
 
   rw10: (n, d) => `${d}
 
@@ -306,11 +306,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-10`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-10`,
 
   rw11: (n, d) => `${d}
 
@@ -341,11 +341,11 @@ Please keep this letter with your personal papers as a reminder of why you have 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Financial Advisor — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-11`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-11`,
 
   rw12: (n, d) => `${d}
 
@@ -378,11 +378,11 @@ Please keep this letter with your personal papers as a record of our discussion 
 Thank you,
 
 <<AGENT FULL NAME>>
-Compass Planning
+Field Agent — Compass Planning
 
 <<AGENT PHONE>>  |  <<AGENT EMAIL>>
 
-Compass Planning  |  Confidential  |  RW-12`,
+Compass Planning  |  Confidential — For Member Use Only  |  RW-12`,
 };
 
 export function LettersTab({ clientId, client }: { clientId: number; client?: Client }) {

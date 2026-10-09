@@ -1,7 +1,7 @@
 {
-  "name": "compass-planning",
+  "name": "compass-planning-advisor",
   "version": "1.0.1",
-  "description": "Financial Planning App",
+  "description": "Compass Planning — Advisor Edition (multi-tenant advisor platform)",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
@@ -80,7 +80,6 @@
     "react-i18next": "^17.0.8",
     "react-resizable-panels": "^0.0.55",
     "recharts": "^2.12.7",
-    "resend": "^3.2.0",
     "run": "^1.5.0",
     "speakeasy": "^2.0.0",
     "tailwind-merge": "^2.3.0",
@@ -126,7 +125,7 @@
     "tailwindcss": "^3.4.4",
     "tsx": "^4.15.6",
     "typescript": "^5.4.5",
-    "vite": "^7.3.6",
+    "vite": "^5.4.21",
     "vitest": "^3.0.0"
   }
 }
