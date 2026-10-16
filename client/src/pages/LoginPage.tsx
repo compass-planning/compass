@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAuth } from "../lib/auth";
+import { useLoginCallback } from "../lib/auth";
 
 type Mode = "login" | "register";
 
@@ -14,7 +14,8 @@ export default function LoginPage({
   initialTier,
   initialMode = "login",
 }: LoginPageProps) {
-  const { login } = useAuth();
+  const onLogin = useLoginCallback();
+
   const [mode, setMode] = useState<Mode>(initialTier ? "register" : initialMode);
   const [tier] = useState<"solo" | "advisor" | undefined>(initialTier);
   const [email, setEmail] = useState("");
@@ -30,20 +31,38 @@ export default function LoginPage({
 
     try {
       if (mode === "login") {
-        await login(email, password);
-        // Auth context handles the redirect — Root() will render FPApp once user is set
+        // Step 1: get access token (may also need TOTP — extend here if needed)
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Invalid email or password.");
+
+        const { accessToken, refreshToken } = data;
+        onLogin(accessToken, refreshToken ?? null);
+        // AuthProvider sets user → Root() re-renders → FPApp loads automatically
       } else {
+        // Register
         const res = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password, name, tier }),
         });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.message || "Registration failed. Please try again.");
-        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Registration failed. Please try again.");
+
         // Auto-login after registration
-        await login(email, password);
+        const loginRes = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const loginData = await loginRes.json().catch(() => ({}));
+        if (!loginRes.ok) throw new Error(loginData.message || "Account created — please sign in.");
+
+        onLogin(loginData.accessToken, loginData.refreshToken ?? null);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
