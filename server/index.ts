@@ -155,6 +155,24 @@ async function runMigrations() {
       advisor_id    INTEGER
     )`,
     `CREATE INDEX IF NOT EXISTS saved_reports_client_idx ON saved_reports(client_id)`,
+        // ── Consent / privacy columns ────────────────────────────────────────────
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_data_processing BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_marketing BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_crm_sharing BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_updated_at TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS purge_requested_at TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS purge_at TIMESTAMPTZ`,
+    // ── Auth / TOTP columns ──────────────────────────────────────────────────
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_code TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_expires TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_pending_secret TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled_at TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_recovery_codes TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code_expires TIMESTAMPTZ`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid TEXT`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT false`,
   ];
   for (const sql of migrations) {
     for (const p of [poolCA, ...(process.env.DATABASE_URL_US ? [poolUS] : [])]) {
