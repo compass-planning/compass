@@ -61,15 +61,16 @@ function issueTokens(userId: number, jurisdiction: "CA" | "US", mfaVerified: boo
 // ── POST /register ────────────────────────────────────────────────────────────
 r.post("/register", async (req: Request, res: Response) => {
   try {
-    const body = z.object({
-      email:        z.string().email(),
-      password:     PASSWORD_SCHEMA,
-      firstName:    z.string().min(1),
-      lastName:     z.string().min(1),
-      firmName:     z.string().optional(),
-      jurisdiction: z.enum(["CA", "US"]).default("CA"),
-      province:     z.string().optional(),
-    }).parse(req.body);
+  const body = z.object({
+  email:        z.string().email(),
+  password:     PASSWORD_SCHEMA,
+  firstName:    z.string().min(1),
+  lastName:     z.string().min(1),
+  firmName:     z.string().optional(),
+  jurisdiction: z.enum(["CA", "US"]).default("CA"),
+  province:     z.string().optional(),
+  accountType:  z.enum(["solo", "advisor"]).default("solo"),
+}).parse(req.body);
 
     const db  = getDb(body.jurisdiction);
     const jur = body.jurisdiction as "CA" | "US";
@@ -100,20 +101,24 @@ r.post("/register", async (req: Request, res: Response) => {
       trialEndsAt,
       emailVerifyCode:     verifyCodeHash,
       emailVerifyExpires:  new Date(Date.now() + 15 * 60 * 1000),
+      accountType:         body.accountType,                          // ← FIX 1
     }).returning();
 
-    // Auto-create financial profile
-    await (db.insert(clients) as any).values({
-      userId:    u.id,
-      firstName: body.firstName,
-      lastName:  body.lastName,
-      email:     body.email.toLowerCase(),
-      jurisdiction: jur,
-      province:  body.province ?? (jur === "CA" ? "ON" : null),
-    }).onConflictDoNothing();
+    // Auto-create financial profile for solo accounts only.
+    // Advisor accounts manage their own client list separately.
+    if (body.accountType !== "advisor") {                             // ← FIX 2
+      await (db.insert(clients) as any).values({
+        userId:    u.id,
+        firstName: body.firstName,
+        lastName:  body.lastName,
+        email:     body.email.toLowerCase(),
+        jurisdiction: jur,
+        province:  body.province ?? (jur === "CA" ? "ON" : null),
+      }).onConflictDoNothing();
+    }
 
     await sendVerificationEmail(body.email, verifyCode, body.firstName);
-    logger.info({ userId: u.id }, "[auth] registration complete, verification email sent");
+    logger.info({ userId: u.id, accountType: body.accountType }, "[auth] registration complete, verification email sent");
 
     res.status(201).json({ message: "Verification code sent to your email.", userId: u.id });
   } catch (e: any) {
@@ -451,6 +456,8 @@ r.get("/me", isAuthenticated, async (req: AuthRequest, res: Response) => {
 r.patch("/me", isAuthenticated, async (req: AuthRequest, res: Response) => {
   try {
     const body = z.object({
+      firstName:    z.string().min(1).optional(),
+      lastName:     z.string().min(1).optional(),
       firmName:     z.string().nullable().optional(),
       jurisdiction: z.enum(["CA", "US"]).optional(),
       province:     z.string().nullable().optional(),

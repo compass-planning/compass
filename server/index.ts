@@ -173,6 +173,8 @@ async function runMigrations() {
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code_expires TIMESTAMPTZ`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid TEXT`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT false`,
+    // ── Account type ──────────────────────────────────────────────────────────
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type TEXT NOT NULL DEFAULT 'solo'`,
   ];
   for (const sql of migrations) {
     for (const p of [poolCA, ...(process.env.DATABASE_URL_US ? [poolUS] : [])]) {

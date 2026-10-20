@@ -1,18 +1,29 @@
+/**
+ * AdvisorSidebar — Compass Planning advisor navigation.
+ *
+ * Top-level tabs (always visible):
+ *   • Clients  — client list / dashboard
+ *   • Setup    — account info, billing, subscription
+ *
+ * Per-client tabs (visible only when a client is selected):
+ *   Overview, Dashboard, Profile
+ *   Net Worth, Goals, Debt, Retirement, Insurance, Cash Flow, Tax & Estate
+ *   AI Insights, Documents, Financial Plan
+ */
+import React from "react";
 import {
   Users, LayoutDashboard, Scale, PiggyBank,
   Shield, Receipt, Brain, TrendingUp,
-  UserCheck, FileText, Target, Sparkles, UserCog,
-  CreditCard, Building2, Globe, Settings, LogOut,
-  Compass,
+  FileText, Target, Sparkles, UserCog,
+  CreditCard, Building2, Globe, LogOut,
+  Compass, Settings,
 } from "lucide-react";
 
-// Simple cn util (avoids dep on clsx when not available at call site)
-function cn(...classes: (string | boolean | undefined | null)[]): string {
-  return classes.filter(Boolean).join(" ");
-}
-
 export type AdvisorTab =
+  // top-level
   | "clients"
+  | "setup"
+  // per-client
   | "overview"
   | "dashboard"
   | "networth"
@@ -37,68 +48,73 @@ interface Props {
   onLocaleChange?: (l: "en" | "fr") => void;
 }
 
+// ── Nav structure ─────────────────────────────────────────────────────────────
 interface TabDef {
   key: AdvisorTab;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  labelEn: string;
+  labelFr: string;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  requiresClient?: boolean;
 }
 
 interface Group {
   group: string;
-  label: string | null;
+  labelEn: string | null;
+  labelFr: string | null;
   tabs: TabDef[];
+  onlyWhenClient?: boolean; // whole group hidden until client selected
 }
 
-function tabGroups(locale: "en" | "fr"): Group[] {
-  const en = locale === "en";
-  return [
-    {
-      group: "advisor",
-      label: null,
-      tabs: [
-        { key: "clients", label: en ? "Clients" : "Clients", icon: Users },
-      ],
-    },
-    {
-      group: "client",
-      label: en ? "Client Overview" : "Aperçu client",
-      tabs: [
-        { key: "overview",  label: en ? "Overview"       : "Aperçu",        icon: LayoutDashboard },
-        { key: "dashboard", label: en ? "Dashboard"      : "Tableau",        icon: TrendingUp },
-        { key: "profile",   label: en ? "Client Profile" : "Profil client",  icon: UserCog },
-      ],
-    },
-    {
-      group: "planning",
-      label: en ? "Financial Planning" : "Planification",
-      tabs: [
-        { key: "networth",      label: en ? "Net Worth"   : "Valeur nette",   icon: Scale },
-        { key: "goals",         label: en ? "Goals"       : "Objectifs",      icon: Target },
-        { key: "debt",          label: en ? "Debt"        : "Dettes",         icon: CreditCard },
-        { key: "retirementhub", label: en ? "Retirement"  : "Retraite",       icon: PiggyBank },
-        { key: "protection",    label: en ? "Insurance"   : "Assurance",      icon: Shield },
-        { key: "expenses",      label: en ? "Cash Flow"   : "Flux de trésor", icon: Receipt },
-        { key: "taxestate",     label: en ? "Tax & Estate": "Impôt & Succès", icon: Building2 },
-      ],
-    },
-    {
-      group: "outputs",
-      label: en ? "Reports & AI" : "Rapports & IA",
-      tabs: [
-        { key: "ai",        label: "AI Insights",        icon: Brain },
-        { key: "documents", label: en ? "Documents" : "Documents", icon: FileText },
-        { key: "fp",        label: en ? "Financial Plan" : "Plan financier",  icon: Sparkles },
-      ],
-    },
-  ];
-}
-
-// Tabs that require an active client
-const CLIENT_REQUIRED: AdvisorTab[] = [
-  "overview", "dashboard", "profile", "networth", "goals", "debt",
-  "retirementhub", "protection", "expenses", "taxestate", "ai", "documents", "fp",
+const GROUPS: Group[] = [
+  {
+    group: "top",
+    labelEn: null,
+    labelFr: null,
+    tabs: [
+      { key: "clients", labelEn: "Clients",       labelFr: "Clients",         icon: Users },
+      { key: "setup",   labelEn: "Setup",          labelFr: "Configuration",   icon: Settings },
+    ],
+  },
+  {
+    group: "client",
+    labelEn: "Client Overview",
+    labelFr: "Aperçu client",
+    onlyWhenClient: true,
+    tabs: [
+      { key: "overview",  labelEn: "Overview",        labelFr: "Aperçu",          icon: LayoutDashboard, requiresClient: true },
+      { key: "dashboard", labelEn: "Dashboard",       labelFr: "Tableau",         icon: TrendingUp,      requiresClient: true },
+      { key: "profile",   labelEn: "Client Profile",  labelFr: "Profil client",   icon: UserCog,         requiresClient: true },
+    ],
+  },
+  {
+    group: "planning",
+    labelEn: "Financial Planning",
+    labelFr: "Planification",
+    onlyWhenClient: true,
+    tabs: [
+      { key: "networth",      labelEn: "Net Worth",    labelFr: "Valeur nette",    icon: Scale,       requiresClient: true },
+      { key: "goals",         labelEn: "Goals",        labelFr: "Objectifs",       icon: Target,      requiresClient: true },
+      { key: "debt",          labelEn: "Debt",         labelFr: "Dettes",          icon: CreditCard,  requiresClient: true },
+      { key: "retirementhub", labelEn: "Retirement",   labelFr: "Retraite",        icon: PiggyBank,   requiresClient: true },
+      { key: "protection",    labelEn: "Insurance",    labelFr: "Assurance",       icon: Shield,      requiresClient: true },
+      { key: "expenses",      labelEn: "Cash Flow",    labelFr: "Flux de trésor.", icon: Receipt,     requiresClient: true },
+      { key: "taxestate",     labelEn: "Tax & Estate", labelFr: "Impôt & Succès",  icon: Building2,   requiresClient: true },
+    ],
+  },
+  {
+    group: "outputs",
+    labelEn: "Reports & AI",
+    labelFr: "Rapports & IA",
+    onlyWhenClient: true,
+    tabs: [
+      { key: "ai",        labelEn: "AI Insights",     labelFr: "Insights IA",     icon: Brain,    requiresClient: true },
+      { key: "documents", labelEn: "Documents",       labelFr: "Documents",       icon: FileText, requiresClient: true },
+      { key: "fp",        labelEn: "Financial Plan",  labelFr: "Plan financier",  icon: Sparkles, requiresClient: true },
+    ],
+  },
 ];
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export function AdvisorSidebar({
   activeTab,
   onTab,
@@ -108,14 +124,20 @@ export function AdvisorSidebar({
   locale = "en",
   onLocaleChange,
 }: Props) {
-  const groups = tabGroups(locale);
   const hasClient = Boolean(clientName);
+  const label = (tab: TabDef) => locale === "fr" ? tab.labelFr : tab.labelEn;
+  const grpLabel = (g: Group) => locale === "fr" ? g.labelFr : g.labelEn;
 
   return (
-    <aside className="w-56 flex-shrink-0 min-h-screen flex flex-col select-none" style={{ background: "#0f0a1e" }}>
-
-      {/* ── Logo ─────────────────────────────────────────────────────── */}
-      <div className="px-4 pt-5 pb-4" style={{ borderBottom: "1px solid rgba(167,139,250,0.15)" }}>
+    <aside
+      className="w-56 flex-shrink-0 min-h-screen flex flex-col select-none"
+      style={{ background: "#0f0a1e" }}
+    >
+      {/* ── Logo ───────────────────────────────────────────────────────── */}
+      <div
+        className="px-4 pt-5 pb-4"
+        style={{ borderBottom: "1px solid rgba(167,139,250,0.15)" }}
+      >
         <div className="flex items-center gap-2.5">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -125,102 +147,79 @@ export function AdvisorSidebar({
           </div>
           <div>
             <div className="text-white text-sm font-bold leading-none">Compass</div>
-            <div className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "#a78bfa" }}>
+            <div
+              className="text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "#a78bfa" }}
+            >
               Advisor
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Active client pill ─────────────────────────────────────── */}
-      {clientName ? (
-        <div
-          className="mx-3 mt-3 px-3 py-2 rounded-lg"
-          style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.25)" }}
-        >
-          <div className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "rgba(167,139,250,0.6)" }}>
-            Active Client
+      {/* ── Active client pill ──────────────────────────────────────────── */}
+      <div className="px-3 pt-3">
+        {hasClient ? (
+          <div
+            className="px-3 py-2 rounded-lg"
+            style={{
+              background: "rgba(124,58,237,0.15)",
+              border: "1px solid rgba(124,58,237,0.25)",
+            }}
+          >
+            <div
+              className="text-[9px] uppercase tracking-widest mb-0.5"
+              style={{ color: "rgba(167,139,250,0.6)" }}
+            >
+              Active Client
+            </div>
+            <div className="text-xs font-semibold truncate text-white">{clientName}</div>
           </div>
-          <div className="text-xs font-semibold truncate text-white">{clientName}</div>
-        </div>
-      ) : (
-        <div
-          className="mx-3 mt-3 px-3 py-2 rounded-lg"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
-        >
-          <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-            No client selected
+        ) : (
+          <div
+            className="px-3 py-2 rounded-lg"
+            style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>
+              No client selected
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* ── Nav ───────────────────────────────────────────────────── */}
-      <nav className="flex-1 px-2 py-3 overflow-y-auto overflow-x-hidden space-y-1">
-        {groups.map(group => {
-          const visibleTabs = group.tabs;
-          if (!visibleTabs.length) return null;
+      {/* ── Nav ────────────────────────────────────────────────────────── */}
+      <nav className="flex-1 px-2 py-3 overflow-y-auto overflow-x-hidden space-y-0.5">
+        {GROUPS.map(group => {
+          // Hide per-client groups when no client is selected
+          if (group.onlyWhenClient && !hasClient) return null;
 
           return (
-            <div key={group.group}>
-              {group.label && (
+            <div key={group.group} className="mb-1">
+              {grpLabel(group) && (
                 <div className="px-3 pt-3 pb-1">
                   <span
                     className="text-[9px] font-bold uppercase tracking-widest"
-                    style={{ color: "rgba(255,255,255,0.25)" }}
+                    style={{ color: "rgba(255,255,255,0.22)" }}
                   >
-                    {group.label}
+                    {grpLabel(group)}
                   </span>
                 </div>
               )}
-              {visibleTabs.map(tab => {
-                const key = tab.key;
-                const isActive = activeTab === key;
-                const disabled = CLIENT_REQUIRED.includes(key) && !hasClient;
+              {group.tabs.map(tab => {
+                const isActive = activeTab === tab.key;
                 const Icon = tab.icon;
 
                 return (
-                  <button
-                    key={key}
-                    onClick={() => !disabled && onTab(key)}
-                    title={disabled ? "Select a client first" : tab.label}
-                    disabled={disabled}
-                    className="group w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all duration-150 focus:outline-none"
-                    style={
-                      isActive
-                        ? {
-                            background: "rgba(124,58,237,0.2)",
-                            border: "1px solid rgba(124,58,237,0.3)",
-                          }
-                        : disabled
-                        ? { opacity: 0.25, cursor: "not-allowed" }
-                        : { border: "1px solid transparent" }
-                    }
-                    onMouseEnter={e => {
-                      if (!isActive && !disabled)
-                        (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)";
-                    }}
-                    onMouseLeave={e => {
-                      if (!isActive && !disabled)
-                        (e.currentTarget as HTMLButtonElement).style.background = "";
-                    }}
-                  >
-                    <Icon
-                      className="w-3.5 h-3.5 flex-shrink-0 transition-colors"
-                      style={{ color: isActive ? "#a78bfa" : "rgba(255,255,255,0.35)" } as React.CSSProperties}
-                    />
-                    <span
-                      className="text-[12px] font-medium flex-1"
-                      style={{ color: isActive ? "#ffffff" : "rgba(255,255,255,0.55)" }}
-                    >
-                      {tab.label}
-                    </span>
-                    {isActive && (
-                      <div
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{ background: "#a78bfa" }}
-                      />
-                    )}
-                  </button>
+                  <NavButton
+                    key={tab.key}
+                    isActive={isActive}
+                    label={label(tab)}
+                    Icon={Icon}
+                    onClick={() => onTab(tab.key)}
+                  />
                 );
               })}
             </div>
@@ -228,9 +227,9 @@ export function AdvisorSidebar({
         })}
       </nav>
 
-      {/* ── Footer ────────────────────────────────────────────────── */}
+      {/* ── Footer ─────────────────────────────────────────────────────── */}
       <div
-        className="px-3 pb-4 pt-3 space-y-3"
+        className="px-3 pb-4 pt-3 space-y-2.5"
         style={{ borderTop: "1px solid rgba(167,139,250,0.12)" }}
       >
         {/* Language toggle */}
@@ -256,10 +255,10 @@ export function AdvisorSidebar({
 
         {/* Advisor name */}
         {advisorName && (
-          <div className="text-center">
+          <div className="text-center px-1">
             <span
-              className="inline-block text-[10px] px-2 py-0.5 rounded-full truncate max-w-full"
-              style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.35)" }}
+              className="block text-[10px] truncate"
+              style={{ color: "rgba(255,255,255,0.3)" }}
             >
               {advisorName}
             </span>
@@ -270,7 +269,9 @@ export function AdvisorSidebar({
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>Online</span>
+            <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.22)" }}>
+              Online
+            </span>
           </div>
           {onLogout && (
             <button
@@ -287,5 +288,56 @@ export function AdvisorSidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+// ── NavButton (internal) ──────────────────────────────────────────────────────
+function NavButton({
+  isActive,
+  label,
+  Icon,
+  onClick,
+}: {
+  isActive: boolean;
+  label: string;
+  Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all duration-150 focus:outline-none"
+      style={
+        isActive
+          ? {
+              background: "rgba(124,58,237,0.2)",
+              border: "1px solid rgba(124,58,237,0.3)",
+            }
+          : { border: "1px solid transparent" }
+      }
+      onMouseEnter={e => {
+        if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)";
+      }}
+      onMouseLeave={e => {
+        if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "";
+      }}
+    >
+      <Icon
+        className="w-3.5 h-3.5 flex-shrink-0 transition-colors"
+        style={{ color: isActive ? "#a78bfa" : "rgba(255,255,255,0.35)" }}
+      />
+      <span
+        className="text-[12px] font-medium flex-1"
+        style={{ color: isActive ? "#ffffff" : "rgba(255,255,255,0.55)" }}
+      >
+        {label}
+      </span>
+      {isActive && (
+        <div
+          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+          style={{ background: "#a78bfa" }}
+        />
+      )}
+    </button>
   );
 }
