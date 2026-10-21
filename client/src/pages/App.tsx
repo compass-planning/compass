@@ -1034,12 +1034,31 @@ function ExecField({ label, value, mono = false, onSave, type = "text" }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main App
 // ─────────────────────────────────────────────────────────────────────────────
-export default function App() {
+interface AppProps {
+  /** When true, this component is rendered inside AdvisorApp — hide own sidebar */
+  advisorMode?: boolean;
+  /** Pre-select this client ID (advisor picks a client from the dashboard) */
+  preSelectedClientId?: number;
+  /** Controlled active tab from the advisor shell */
+  activeTab?: string;
+  /** Notify advisor shell when tab changes internally */
+  onTabChange?: (tab: string) => void;
+  /** Return to advisor client list */
+  onBackToClients?: () => void;
+}
+
+export default function App({
+  advisorMode = false,
+  preSelectedClientId,
+  activeTab: externalTab,
+  onTabChange,
+  onBackToClients,
+}: AppProps = {}) {
   const { toast } = useToast();
   const { user, logout } = useAuth();
   const { locale: advisorLocaleStr } = useLocale();
   const role = user?.role ?? "fa";
-  const level = user?.level ?? "standard";
+  const level = "enhanced"; // Compass Planning: all users get full access
   const [showForceReset, setShowForceReset] = useState(!!user?.mustResetPassword);
   const [showChangePw, setShowChangePw]     = useState(false);
   const [tab, setTab] = useState<Tab>(user?.role === "ga" ? "agents" : "clients");
@@ -1054,6 +1073,21 @@ export default function App() {
     const lang = (client.preferredLanguage ?? (client.province === "QC" ? "fr" : "en")) as ClientLocale;
     setClientLocale(lang);
   }, [client?.id, client?.preferredLanguage]);
+
+  // In advisor mode: load the pre-selected client and sync tab from parent
+  useEffect(() => {
+    if (!advisorMode || !preSelectedClientId) return;
+    api.get<Client>(`/api/clients/${preSelectedClientId}`).then(c => {
+      setClient(c);
+      setShowClientDetail(false);
+    }).catch(() => {});
+  }, [advisorMode, preSelectedClientId]);
+
+  // Sync external tab (from AdvisorSidebar) into internal tab state
+  useEffect(() => {
+    if (!advisorMode || !externalTab) return;
+    setTab(externalTab as Tab);
+  }, [advisorMode, externalTab]);
   const [plan, setPlan]           = useState<Plan | null>(null);
   const [showClientDetail, setShowClientDetail] = useState(false);
   const [clientOv, setClientOv]   = useState<Overview | null>(null);
@@ -1158,7 +1192,11 @@ export default function App() {
 
   function backToClients() {
     setShowClientDetail(false);
-    setTab("clients");
+    if (advisorMode && onBackToClients) {
+      onBackToClients();
+    } else {
+      setTab("clients");
+    }
   }
 
   // Two locales, not one:
@@ -1181,7 +1219,7 @@ export default function App() {
   // Person toggle is rendered by HubShell inside each hub / PlanningDocFlow.
   return (
     <VoiceProvider>
-    <div className="flex h-screen overflow-hidden bg-slate-100">
+    <div className={advisorMode ? "flex h-full overflow-hidden bg-slate-100" : "flex h-screen overflow-hidden bg-slate-100"}>
       <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} actions={cmdActions} />
       {focusMode && (
         <div
@@ -1194,7 +1232,15 @@ export default function App() {
           </div>
         </div>
       )}
-      <Sidebar activeTab={tab} onTab={t => { if (t === "clients") { setShowClientDetail(false); } setTab(t as any); setPerson("primary"); setNwSubtabHint(undefined); }} clientName={clientName} role={role} level={level} />
+      {!advisorMode && (
+        <Sidebar activeTab={tab} onTab={t => {
+          if (t === "clients") { setShowClientDetail(false); onBackToClients?.(); }
+          setTab(t as any);
+          onTabChange?.(t);
+          setPerson("primary");
+          setNwSubtabHint(undefined);
+        }} clientName={clientName} role={role} level={level} />
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
