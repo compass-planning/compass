@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import FPApp from "./pages/App";
+import AdvisorApp from "./pages/AdvisorApp";
 import { Toaster } from "./components/ui/toaster";
 import "./index.css";
 import "./i18n";
@@ -33,8 +34,10 @@ function Root() {
     </div>
   );
 
-  // Authenticated → main app
-  if (user) return <FPApp />;
+  // Authenticated → route by account type
+  if (user) {
+    return user.accountType === "advisor" ? <AdvisorApp /> : <FPApp />;
+  }
 
   // Landing → Login flow
   if (screen === "landing") {

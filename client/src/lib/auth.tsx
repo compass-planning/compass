@@ -29,6 +29,7 @@ export interface User {
   mustResetPassword?: boolean | null;
   totpEnabledAt?:     string | null;
   emailVerifiedAt?:   string | null;
+  accountType?:       "solo" | "advisor";
 }
 
 interface AuthCtx {
