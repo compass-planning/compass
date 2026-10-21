@@ -14,6 +14,7 @@ import { VoiceAddDialog } from "../components/VoiceAddDialog";
 import { DebtDashboard } from "../components/planning/DebtDashboard";
 import { MonteCarloResults } from "../components/MonteCarloResults";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { useClientLocale } from "../hooks/useClientLocale";
 
 // ── Shared mini components ────────────────────────────────────────────────────
 const TH = ({ children }: { children?: React.ReactNode }) =>(
