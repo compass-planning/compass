@@ -33,7 +33,7 @@ function resolve(key: string): string {
   if (FALLBACKS[key] !== undefined) return FALLBACKS[key];
 
   const parts = key.split(".");
-  const locale = (translations as Record<string, TranslationBranch>)["en"];
+  const locale = (translations as unknown as Record<string, TranslationBranch>)["en"];
   if (!locale) return key;
 
   if (parts.length === 1) {

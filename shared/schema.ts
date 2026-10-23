@@ -78,6 +78,8 @@ export const users = pgTable("users", {
   // ── Password reset ────────────────────────────────────────────────────────
   resetCode:          text("reset_code"),
   resetCodeExpires:   timestamp("reset_code_expires"),
+  // ── Account type ──────────────────────────────────────────────────────────
+  accountType:        text("account_type").notNull().default("solo"), // "solo" | "advisor"
   createdAt:    timestamp("created_at").defaultNow().notNull(),
   updatedAt:    timestamp("updated_at").defaultNow().notNull(),
 });

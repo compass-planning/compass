@@ -16,6 +16,7 @@ import { verifyAccessToken } from "../lib/jwt.js";
 export interface AuthRequest extends Request {
   userId?:           number;
   userJurisdiction?: "CA" | "US";
+  accountType?:      "solo" | "advisor";
 }
 
 export async function isAuthenticated(
@@ -40,6 +41,7 @@ export async function isAuthenticated(
 
     req.userId           = payload.userId;
     req.userJurisdiction = payload.jurisdiction;
+    req.accountType      = payload.accountType ?? "solo";
     next();
   } catch {
     res.status(401).json({ message: "Invalid or expired session" });
@@ -62,6 +64,7 @@ export async function getUser(userId: number, jurisdiction: "CA" | "US" = "CA") 
     province:           users.province,
     totpEnabledAt:      users.totpEnabledAt,
     emailVerifiedAt:    users.emailVerifiedAt,
+    accountType:        users.accountType,
   }).from(users).where(eq(users.id, userId)).limit(1);
   return u ?? null;
 }

@@ -41,9 +41,10 @@ export function safe(body: any): Record<string, unknown> {
 
 /**
  * Returns true if the given clientId belongs to the authenticated userId.
- * Single-user model: each user owns exactly one profile record.
+ * Works for both solo and advisor accounts — advisors create clients under
+ * their own userId, so the check is the same.
  */
-export async function ownsClient(clientId: number, userId: number): Promise<boolean> {
+export async function ownsClient(clientId: number, userId: number, _accountType?: string): Promise<boolean> {
   const [c] = await db
     .select({ id: clients.id })
     .from(clients)

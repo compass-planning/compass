@@ -176,11 +176,34 @@ async function runMigrations() {
     // ── Account type ──────────────────────────────────────────────────────────
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type TEXT NOT NULL DEFAULT 'solo'`,
   ];
+
+  // ── Data-fix migrations (parameterised, run separately) ───────────────────
+  // Reassign orphaned test clients to their advisor owner.
+  // This is idempotent: if the client already belongs to the advisor, nothing changes.
+  const dataFixes: Array<{ sql: string; params: any[] }> = [
+    {
+      // Reassign any clients whose user_id no longer has a users row (orphaned)
+      // to the first advisor account found, so the advisor can access them.
+      sql: `
+        UPDATE clients c
+        SET user_id = (
+          SELECT u.id FROM users u WHERE u.account_type = 'advisor' ORDER BY u.id LIMIT 1
+        )
+        WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = c.user_id)
+          AND EXISTS (SELECT 1 FROM users WHERE account_type = 'advisor')
+      `,
+      params: [],
+    },
+  ];
   for (const sql of migrations) {
     for (const p of [poolCA, ...(process.env.DATABASE_URL_US ? [poolUS] : [])]) {
       try { await p.query(sql); }
       catch (e: any) { console.error("[migration]", e.message); }  // ← Item 1: no sql in log (may contain PII via params)
     }
+  }
+  for (const fix of dataFixes) {
+    try { await poolCA.query(fix.sql, fix.params); }
+    catch (e: any) { console.error("[data-fix]", e.message); }
   }
   console.log("[migrations] done");
 }

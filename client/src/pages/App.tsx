@@ -1057,11 +1057,11 @@ export default function App({
   const { toast } = useToast();
   const { user, logout } = useAuth();
   const { locale: advisorLocaleStr } = useLocale();
-  const role = user?.role ?? "fa";
+  const role = "fa";
   const level = "enhanced"; // Compass Planning: all users get full access
   const [showForceReset, setShowForceReset] = useState(!!user?.mustResetPassword);
   const [showChangePw, setShowChangePw]     = useState(false);
-  const [tab, setTab] = useState<Tab>(user?.role === "ga" ? "agents" : "clients");
+  const [tab, setTab] = useState<Tab>("clients");
   const [nwSubtabHint, setNwSubtabHint] = useState<string | undefined>(undefined);
   const [person, setPerson] = useState<"primary"|"spouse"|"combined">("primary");
   const [client, setClient]       = useState<Client | null>(null);
@@ -1187,7 +1187,7 @@ export default function App({
   function selectPlan(p: Plan) {
     setPlan(p);
     setShowClientDetail(false);
-    setTab(level === "standard" ? "protection" : "fp");
+    setTab("fp");
   }
 
   function backToClients() {
@@ -1379,17 +1379,17 @@ export default function App({
               >
                 {tab === "networth" && (
                   <QueryClientProvider client={queryClient}>
-                      <NetWorthTabNew clientId={client.id} client={client} t={tAdvisor} />
+                      <NetWorthTabNew clientId={client.id} client={client} />
                    </QueryClientProvider>
                 )}
                 {tab === "goals"    && (
                   <QueryClientProvider client={queryClient}>
-                    <GoalsTab clientId={client.id} client={client} t={tAdvisor} />
+                    <GoalsTab clientId={client.id} client={client} />
                  </QueryClientProvider>
                 )}
                 {tab === "debt"     && (
                   <QueryClientProvider client={queryClient}>
-                    <DebtTab clientId={client.id} t={tAdvisor} />
+                    <DebtTab clientId={client.id} />
                   </QueryClientProvider>
                 )}
                 {tab === "expenses" && (

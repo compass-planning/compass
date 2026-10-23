@@ -52,8 +52,8 @@ const PASSWORD_SCHEMA = z.string()
   .regex(/[a-z]/, "Password must contain a lowercase letter")
   .regex(/[0-9]/, "Password must contain a number");
 
-function issueTokens(userId: number, jurisdiction: "CA" | "US", mfaVerified: boolean) {
-  const access  = signAccessToken({ userId, jurisdiction, mfaVerified });
+function issueTokens(userId: number, jurisdiction: "CA" | "US", mfaVerified: boolean, accountType: "solo" | "advisor" = "solo") {
+  const access  = signAccessToken({ userId, jurisdiction, mfaVerified, accountType });
   const refresh = mfaVerified ? signRefreshToken(userId) : null;
   return { access, refresh };
 }
@@ -160,7 +160,8 @@ r.post("/verify-email", async (req: Request, res: Response) => {
     }).where(eq(users.id, u.id));
 
     // Issue partial token — user must complete TOTP setup before full access
-    const { access } = issueTokens(u.id, jur, false);
+    const acctTypeV = ((u as any).accountType ?? "solo") as "solo" | "advisor";
+    const { access } = issueTokens(u.id, jur, false, acctTypeV);
     res.json({ accessToken: access, nextStep: "totp-setup" });
   } catch (e: any) {
     if (e instanceof AppError) return res.status(e.statusCode).json({ message: e.message });
@@ -195,15 +196,16 @@ r.post("/login", async (req: Request, res: Response) => {
     if (!u.emailVerifiedAt) throw new AppError("Please verify your email before signing in", 403);
 
     jur = (u.jurisdiction ?? "CA") as "CA" | "US";
+    const acctType = ((u as any).accountType ?? "solo") as "solo" | "advisor";
 
     // If TOTP not yet set up, issue partial token and direct to setup
     if (!u.totpEnabledAt) {
-      const { access } = issueTokens(u.id, jur, false);
+      const { access } = issueTokens(u.id, jur, false, acctType);
       return res.json({ accessToken: access, nextStep: "totp-setup" });
     }
 
     // TOTP enrolled — issue partial token, require TOTP step
-    const { access } = issueTokens(u.id, jur, false);
+    const { access } = issueTokens(u.id, jur, false, acctType);
     res.json({ accessToken: access, nextStep: "totp-verify" });
   } catch (e: any) {
     if (e instanceof AppError) return res.status(e.statusCode).json({ message: e.message });
@@ -256,7 +258,7 @@ r.post("/totp/enable", async (req: AuthRequest, res: Response) => {
   try {
     const { code } = z.object({ code: z.string().min(6).max(6) }).parse(req.body);
     const db       = getDb(jur);
-    const [u]      = await db.select({ totpPendingSecret: users.totpPendingSecret })
+    const [u]      = await db.select({ totpPendingSecret: users.totpPendingSecret, accountType: (users as any).accountType })
       .from(users).where(eq(users.id, userId)).limit(1);
 
     if (!u?.totpPendingSecret) return res.status(400).json({ message: "No pending TOTP setup" });
@@ -275,7 +277,8 @@ r.post("/totp/enable", async (req: AuthRequest, res: Response) => {
     }).where(eq(users.id, userId));
 
     // Issue full token — TOTP now verified
-    const { access, refresh } = issueTokens(userId, jur, true);
+    const acctTypeEv = ((u as any).accountType ?? "solo") as "solo" | "advisor";
+    const { access, refresh } = issueTokens(userId, jur, true, acctTypeEv);
     logger.info({ userId }, "[auth] TOTP enrollment complete");
 
     res.json({ accessToken: access, refreshToken: refresh, recoveryCodes: plain });
@@ -299,7 +302,7 @@ r.post("/totp/verify", async (req: Request, res: Response) => {
   try {
     const { code } = z.object({ code: z.string().min(6).max(6) }).parse(req.body);
     const db       = getDb(jur);
-    const [u]      = await db.select({ totpSecret: users.totpSecret })
+    const [u]      = await db.select({ totpSecret: users.totpSecret, accountType: (users as any).accountType })
       .from(users).where(eq(users.id, userId)).limit(1);
 
     if (!u?.totpSecret) return res.status(400).json({ message: "TOTP not configured" });
@@ -307,7 +310,8 @@ r.post("/totp/verify", async (req: Request, res: Response) => {
     const valid = verifyTotpCode(u.totpSecret, code);
     if (!valid) return res.status(400).json({ message: "Invalid code" });
 
-    const { access, refresh } = issueTokens(userId, jur, true);
+    const acctTypeTv = ((u as any).accountType ?? "solo") as "solo" | "advisor";
+    const { access, refresh } = issueTokens(userId, jur, true, acctTypeTv);
     res.json({ accessToken: access, refreshToken: refresh });
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ message: e.errors[0]?.message });
@@ -329,7 +333,7 @@ r.post("/totp/recover", async (req: Request, res: Response) => {
   try {
     const { code } = z.object({ code: z.string().min(1) }).parse(req.body);
     const db       = getDb(jur);
-    const [u]      = await db.select({ mfaRecoveryCodes: users.mfaRecoveryCodes })
+    const [u]      = await db.select({ mfaRecoveryCodes: users.mfaRecoveryCodes, accountType: (users as any).accountType })
       .from(users).where(eq(users.id, userId)).limit(1);
 
     if (!u?.mfaRecoveryCodes) return res.status(400).json({ message: "No recovery codes found" });
@@ -343,7 +347,8 @@ r.post("/totp/recover", async (req: Request, res: Response) => {
     await (db.update(users) as any).set({ mfaRecoveryCodes: JSON.stringify(codes) })
       .where(eq(users.id, userId));
 
-    const { access, refresh } = issueTokens(userId, jur, true);
+    const acctTypeRv = ((u as any).accountType ?? "solo") as "solo" | "advisor";
+    const { access, refresh } = issueTokens(userId, jur, true, acctTypeRv);
     const remaining = codes.filter((c: any) => !c.used).length;
     logger.info({ userId, remaining }, "[auth] recovery code used");
 
@@ -428,16 +433,17 @@ r.post("/refresh", async (req: Request, res: Response) => {
 
     // Look up user to confirm still active
     let db  = getDb("CA"); let jur: "CA" | "US" = "CA";
-    let [u] = await db.select({ id: users.id, jurisdiction: users.jurisdiction })
+    let [u] = await db.select({ id: users.id, jurisdiction: users.jurisdiction, accountType: (users as any).accountType })
       .from(users).where(eq(users.id, userId)).limit(1);
     if (!u) { db = getDb("US"); jur = "US";
-      [u] = await db.select({ id: users.id, jurisdiction: users.jurisdiction })
+      [u] = await db.select({ id: users.id, jurisdiction: users.jurisdiction, accountType: (users as any).accountType })
         .from(users).where(eq(users.id, userId)).limit(1);
     }
     if (!u) throw new AppError("User not found", 401);
 
     jur = (u.jurisdiction ?? "CA") as "CA" | "US";
-    const access = signAccessToken({ userId, jurisdiction: jur, mfaVerified: true });
+    const acctTypeRef = ((u as any).accountType ?? "solo") as "solo" | "advisor";
+    const access = signAccessToken({ userId, jurisdiction: jur, mfaVerified: true, accountType: acctTypeRef });
     res.json({ accessToken: access });
   } catch (e: any) {
     if (e instanceof AppError) return res.status(e.statusCode).json({ message: e.message });

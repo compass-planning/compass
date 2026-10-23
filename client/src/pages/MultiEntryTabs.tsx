@@ -446,6 +446,7 @@ function emptyDraft(type: "asset"|"liability"): NWDraft {
 }
 
 function ExtraFields({ draft, onChange, spouseName, dependants }: { draft: NWDraft; onChange: (k: keyof NWDraft, v: any) => void; spouseName: string; dependants?: any[] }) {
+  const { ct } = useClientLocale();
   const elems: React.ReactNode[] = [];
 
   if (draft.category === "RRSP") {
@@ -570,6 +571,7 @@ type NWEditForm = Partial<NWEntry & {
   monthlyPayment: string; respBeneficiary: string;
   holdingType: string; jointWithSpouse: boolean; stockOptionType: string;
   propertyType: string; purchasePrice: string; rentalIncome: string; rentalExpenses: string;
+  funds: FundHolding[];
 }>;
 
 // ─────────────────────────────────────────────────────────────────────────────
