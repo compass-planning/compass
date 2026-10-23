@@ -16,8 +16,9 @@ import {
   Shield, Receipt, Brain, TrendingUp,
   FileText, Target, Sparkles, UserCog,
   CreditCard, Building2, Globe, LogOut,
-  Compass, Settings,
+  Settings,
 } from "lucide-react";
+import { CompassLogo } from "../components/CompassLogo";
 
 export type AdvisorTab =
   // top-level
@@ -138,23 +139,7 @@ export function AdvisorSidebar({
         className="px-4 pt-5 pb-4"
         style={{ borderBottom: "1px solid rgba(167,139,250,0.15)" }}
       >
-        <div className="flex items-center gap-2.5">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: "linear-gradient(135deg, #2d1b69 0%, #7c3aed 100%)" }}
-          >
-            <Compass className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="text-white text-sm font-bold leading-none">Compass</div>
-            <div
-              className="text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "#a78bfa" }}
-            >
-              Advisor
-            </div>
-          </div>
-        </div>
+        <CompassLogo variant="sidebar" edition="Advisor Edition" light />
       </div>
 
       {/* ── Active client pill ──────────────────────────────────────────── */}

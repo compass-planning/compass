@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useLocale } from "../hooks/useLocale";
+import { CompassLogo } from "./CompassLogo";
 
 export type Tab =
   | "agents"
@@ -89,14 +90,7 @@ export function Sidebar({ activeTab, onTab, clientName, role, level }: Props) {
 
       {/* Logo */}
       <div className="px-4 pt-5 pb-4 border-b border-white/10">
-        <img
-          src="/compass-planning-advisor-logo.svg"
-          alt="Compass Planning"
-          className="w-full max-w-[140px] mx-auto block object-contain"
-        />
-        <p className="text-[10px] text-white/40 font-medium tracking-widest text-center mt-2 uppercase">
-          Advisor Edition
-        </p>
+        <CompassLogo variant="sidebar" light className="justify-center" />
       </div>
 
       {/* Active client pill */}

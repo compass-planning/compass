@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLoginCallback } from "../lib/auth";
+import { CompassLogo } from "../components/CompassLogo";
 
 type Mode    = "login" | "register";
 type Step    = "credentials" | "verify-email" | "totp-setup" | "totp-verify";
@@ -161,9 +162,8 @@ export default function LoginPage({
             backgroundSize: "40px 40px",
           }}
         />
-        <div className="flex items-center gap-3 relative">
-          <CompassIcon size={32} />
-          <span className="text-white font-semibold text-xl tracking-tight">Compass Planning</span>
+        <div className="relative">
+          <CompassLogo variant="full" light />
         </div>
         <div className="relative">
           <blockquote className="text-white/80 text-2xl font-light leading-relaxed mb-8">
@@ -181,8 +181,7 @@ export default function LoginPage({
       {/* Right form panel */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         <div className="flex items-center gap-2 mb-10 lg:hidden">
-          <CompassIcon size={24} />
-          <span className="text-white font-semibold text-base">Compass Planning</span>
+          <CompassLogo variant="sidebar" light />
         </div>
 
         <div className="w-full max-w-sm">
