@@ -92,13 +92,7 @@ export function AdvisorDashboard({ onSelectClient, onAddClient, accessToken }: P
       })
       .then((data: ClientRow[]) => {
         if (!alive) return;
-        // Filter out the advisor's own auto-created household row (belt-and-suspenders).
-        // The server-side fix skips creating it, but older accounts may still have it.
-        const filtered = data.filter(c => {
-          if (advisorUserId && c.userId === advisorUserId) return false;
-          return true;
-        });
-        setClients(filtered);
+        setClients(data);
       })
       .catch((e: Error) => {
         if (alive) setError(e.message ?? "Failed to load clients");

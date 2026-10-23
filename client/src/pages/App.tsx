@@ -309,7 +309,7 @@ function HouseholdRow({
 
 // ── Clients Tab (Advisor Operations Queue) ────────────────────────────────────
 
-function ClientsTab({ onSelect, tAdv = translations.en }: { onSelect: (c: Client) => void; tAdv?: T }) {
+export function ClientsTab({ onSelect, tAdv = translations.en }: { onSelect: (c: Client) => void; tAdv?: T }) {
   const { user } = useAuth();
   const jurisdiction  = (user as any)?.jurisdiction ?? "CA";
   const regions       = jurisdiction === "US"

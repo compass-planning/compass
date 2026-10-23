@@ -14,10 +14,9 @@
  */
 import { useState } from "react";
 import { AdvisorSidebar, type AdvisorTab } from "./AdvisorSidebar";
-import { AdvisorDashboard } from "./AdvisorDashboard";
 import { AdvisorSetup } from "./AdvisorSetup";
 import { useAuth } from "../lib/auth";
-import FPApp from "./App";
+import FPApp, { ClientsTab } from "./App";
 
 interface SelectedClient {
   id: number;
@@ -49,9 +48,9 @@ export default function AdvisorApp() {
     setActiveTab("overview");
   };
 
-  const handleAddClient = () => {
-    setSelectedClient(null);
-    setActiveTab("clients");
+  // Selecting a client from ClientsTab (which passes a Client object)
+  const handleSelectClientObj = (c: { id: number; firstName: string; lastName: string }) => {
+    handleSelectClient(c.id, `${c.firstName} ${c.lastName}`);
   };
 
   // ── Content area ──────────────────────────────────────────────────────────
@@ -74,13 +73,11 @@ export default function AdvisorApp() {
   } else if (activeTab === "setup") {
     content = <AdvisorSetup />;
   } else {
-    // Default: clients dashboard
+    // Clients tab — full add/search/delete flow from App
     content = (
-      <AdvisorDashboard
-        onSelectClient={handleSelectClient}
-        onAddClient={handleAddClient}
-        accessToken={accessToken}
-      />
+      <div className="flex-1 h-full overflow-y-auto" style={{ background: "#0f0a1e" }}>
+        <ClientsTab onSelect={handleSelectClientObj} />
+      </div>
     );
   }
 
