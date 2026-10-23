@@ -15,6 +15,7 @@ export interface SessionPayload {
   userId:       number;
   jurisdiction: "CA" | "US";
   mfaVerified:  boolean;  // true only after TOTP step is passed
+  accountType?: "solo" | "advisor"; // undefined = legacy token, treated as "solo"
 }
 
 const ACCESS_TTL  = "8h";   // matches previous session TTL
@@ -37,6 +38,7 @@ export function verifyAccessToken(token: string): SessionPayload {
     userId:       decoded.userId,
     jurisdiction: decoded.jurisdiction ?? "CA",
     mfaVerified:  decoded.mfaVerified,
+    accountType:  decoded.accountType ?? "solo",
   };
 }
 
