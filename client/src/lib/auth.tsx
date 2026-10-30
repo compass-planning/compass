@@ -50,7 +50,12 @@ const Ctx = createContext<AuthCtx>({
 let _memToken: string | null = null;
 
 export function getMemToken(): string | null { return _memToken; }
-export function setMemToken(t: string | null) { _memToken = t; }
+export function setMemToken(t: string | null) {
+  _memToken = t;
+  // Mirror into localStorage so legacy code that reads "fp_token" keeps working
+  if (t) localStorage.setItem("fp_token", t);
+  else    localStorage.removeItem("fp_token");
+}
 
 const REFRESH_KEY = "compass_refresh";
 
@@ -61,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshTimer = useRef<ReturnType<typeof setTimeout>>();
 
   function setAccessToken(token: string | null) {
-    _memToken = token;
+    setMemToken(token);   // also mirrors into localStorage as "fp_token"
     _setAccessToken(token);
   }
 
