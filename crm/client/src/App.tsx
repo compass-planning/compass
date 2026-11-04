@@ -24,6 +24,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import ForgotPassword from "@/pages/ForgotPassword";
 import { EmailSetupModal } from "@/components/EmailSetupModal";
+import Briefing from "@/pages/Briefing";
 import { IdleSessionGuard } from "@/components/IdleSessionGuard";
 import { KeyRound, Eye, EyeOff } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -100,6 +101,7 @@ function AuthenticatedRouter() {
       <Route path="/calendar" component={Calendar} />
       <Route path="/meeting-recorder" component={MeetingRecorder} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/briefing" component={Briefing} />
       <Route path="/pipeline" component={Pipeline} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/settings" component={SettingsPage} />

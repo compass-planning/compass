@@ -16,6 +16,21 @@ export function useUnreadCount() {
   });
 }
 
+export type BriefingData = {
+  generatedAt: string;
+  notifications: Notification[];
+  birthdays: { id: number; firstName: string; lastName: string; dateOfBirth: string | null }[];
+  tasks: { id: number; title: string; dueDate: string | null; priority: string; status: string }[];
+};
+
+/** Daily briefing — same data feeds the login popup and the Daily Briefing page. */
+export function useBriefing() {
+  return useQuery<BriefingData>({
+    queryKey: ["/api/crm/notifications/briefing"],
+    staleTime: 60_000,
+  });
+}
+
 export function useDigest() {
   return useQuery<{
     notifications: Notification[];

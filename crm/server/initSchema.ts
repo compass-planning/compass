@@ -15,7 +15,21 @@ export async function ensureCrmSchema(): Promise<void> {
     const { rows } = await client.query(
       `SELECT to_regclass('${CRM_SCHEMA}.staff') AS t`,
     );
-    if (rows[0]?.t) return;
+    if (rows[0]?.t) {
+      // One-time upgrade: Pipeline and Analytics used to be off by default. Switch them on for
+      // existing companies once (detected by the old column default), then never touch them again.
+      const d = await client.query(
+        `SELECT column_default FROM information_schema.columns
+         WHERE table_schema='${CRM_SCHEMA}' AND table_name='companies' AND column_name='module_pipeline'`,
+      );
+      if (d.rows[0]?.column_default === "false") {
+        await client.query(`ALTER TABLE ${CRM_SCHEMA}.companies ALTER COLUMN module_pipeline SET DEFAULT true`);
+        await client.query(`ALTER TABLE ${CRM_SCHEMA}.companies ALTER COLUMN module_analytics SET DEFAULT true`);
+        await client.query(`UPDATE ${CRM_SCHEMA}.companies SET module_pipeline = true, module_analytics = true`);
+        logger.info("[crm] enabled Pipeline and Analytics modules for existing companies");
+      }
+      return;
+    }
     logger.info("[crm] first run — creating CRM tables in schema 'crm'");
     await client.query("BEGIN");
     try {

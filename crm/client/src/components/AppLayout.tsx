@@ -1,7 +1,7 @@
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, PieChart, Settings, Search, UserCog, LogOut, Mail, CalendarDays, Mic, TrendingUp, Building2, CheckSquare, PanelLeftClose, PanelLeftOpen, LineChart } from "lucide-react";
+import { LayoutDashboard, Users, PieChart, Settings, Search, UserCog, LogOut, Mail, CalendarDays, Mic, TrendingUp, Building2, CheckSquare, PanelLeftClose, PanelLeftOpen, LineChart, Sun } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { CompassLogo } from "@/components/CompassLogo";
 import { useCurrentStaff } from "@/hooks/use-users";
@@ -39,6 +39,7 @@ export function AppLayout({ children, sidebarOverride, noPadding, workspaceMode 
 
   const navItems: NavItem[] = [
     { href: "/", label: t("nav.dashboard"), icon: LayoutDashboard },
+    { href: "/briefing", label: isFr ? "Briefing quotidien" : "Daily Briefing", icon: Sun },
     { href: "/pipeline", label: t("nav.pipeline"), icon: TrendingUp, moduleKey: "modulePipeline" },
     { href: "/tasks", label: t("nav.tasks"), icon: CheckSquare },
     { href: "/clients", label: t("nav.clients"), icon: Users },
