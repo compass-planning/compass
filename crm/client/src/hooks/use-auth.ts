@@ -20,7 +20,11 @@ async function fetchUser(): Promise<AuthUser | null> {
   }
 
   if (!response.ok) {
-    throw new Error(`${response.status}: ${response.statusText}`);
+    // Any other failure (429, 5xx, server still starting) must NOT throw: an errored query
+    // that remounts refetches, flips AppContent between spinner and page, and loops forever,
+    // hammering the API into 429. Treat it as signed out; the next navigation retries.
+    console.warn(`[auth] /api/crm/auth/user returned ${response.status}`);
+    return null;
   }
 
   return response.json();
@@ -32,6 +36,7 @@ export function useAuth() {
     queryKey: ["/api/crm/auth/user"],
     queryFn: fetchUser,
     retry: false,
+    retryOnMount: false,
     staleTime: 1000 * 60 * 5,
   });
 

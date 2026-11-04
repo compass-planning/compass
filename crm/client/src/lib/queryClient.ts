@@ -56,6 +56,7 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: Infinity,
       retry: false,
+      retryOnMount: false, // an errored query must not refetch every time a component mounts
     },
     mutations: {
       retry: false,
