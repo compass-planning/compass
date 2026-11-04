@@ -6,6 +6,10 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
+# Compass CRM (./crm) has its own package.json / dependencies
+COPY crm/package*.json ./crm/
+RUN npm --prefix crm ci
+
 COPY . .
 
 ARG CACHEBUST=1
@@ -40,8 +44,12 @@ WORKDIR /app
 COPY --chown=appuser:appgroup package*.json ./
 RUN npm ci --omit=dev
 
+COPY --chown=appuser:appgroup crm/package*.json ./crm/
+RUN npm --prefix crm ci --omit=dev
+
 COPY --chown=appuser:appgroup --from=builder /app/dist ./dist
 COPY --chown=appuser:appgroup --from=builder /app/shared ./shared
+COPY --chown=appuser:appgroup --from=builder /app/crm/dist ./crm/dist
 
 EXPOSE 8080
 CMD ["node", "dist/server/index.js"]

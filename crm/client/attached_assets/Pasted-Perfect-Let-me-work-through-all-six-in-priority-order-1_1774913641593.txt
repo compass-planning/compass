@@ -1,0 +1,726 @@
+Perfect. Let me work through all six in priority order.
+
+---
+
+## 1. Microsoft Teams Graph API integration### Phase 1 — Azure app registration (once per tenant)
+
+You register a single multi-tenant Azure AD app. The advisor's IT admin grants admin consent for the required Graph API scopes. These are the exact scopes you need:
+
+```
+OnlineMeetings.ReadWrite       — read/write meeting metadata
+OnlineMeetingRecordings.Read.All — download recordings
+CallRecords.Read.All           — receive callRecords webhooks
+Calendars.Read                 — find upcoming meetings (optional)
+Files.Read.All                 — access OneDrive recording files
+offline_access                 — get refresh tokens
+```
+
+The distinction between **delegated** (user signs in) and **application** (daemon, no user) permissions matters here. For joining a meeting as a bot and reading recordings, you need **application** permissions with admin consent — no user login flow. For calendar read (optional, to auto-detect meetings), delegated is cleaner.
+
+Store per tenant: `client_id`, encrypted `client_secret`, `tenant_id` (their Azure AD tenant), access token + refresh token in `meeting_platform_credentials`.
+
+**Token lifecycle:**
+```
+POST https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token
+  grant_type=client_credentials
+  client_id={your_client_id}
+  client_secret={your_client_secret}
+  scope=https://graph.microsoft.com/.default
+
+Returns: access_token (1hr TTL), no refresh token for client_credentials
+→ Re-acquire on expiry (cache in Redis with 55-min TTL)
+```
+
+### Phase 2 — Bot joins the meeting
+
+When the advisor clicks "Start recording" in your CRM, you call the Graph API to add your bot as a participant:
+
+```
+POST https://graph.microsoft.com/v1.0/communications/calls
+Authorization: Bearer {access_token}
+
+Body:
+{
+  "@odata.type": "#microsoft.graph.call",
+  "callbackUri": "https://your-crm.com/api/v1/webhooks/teams/calls",
+  "requestedModalities": ["audio"],
+  "mediaConfig": {
+    "@odata.type": "#microsoft.graph.serviceHostedMediaConfig"
+  },
+  "meetingInfo": {
+    "@odata.type": "#microsoft.graph.joinMeetingIdMeetingInfo",
+    "joinMeetingId": "{meeting_id_from_join_url}",
+    "passcode": "{passcode_if_any}"
+  }
+}
+```
+
+The join meeting ID is extracted from the Teams join URL (`https://teams.microsoft.com/l/meetup-join/...`). The URL contains an encoded meeting ID — you parse it with a regex or the Teams SDK. Teams then displays the legal recording notice banner to all participants automatically, satisfying PIPEDA notification requirements.
+
+### Phase 3 — Post-meeting recording retrieval
+
+When the meeting ends, two webhooks fire: the `callRecords` subscription notifies you the call ended, and a OneDrive delta notification tells you a new file appeared in the organiser's recording folder.
+
+**callRecords webhook payload gives you:**
+```
+meetingId, organizer, participants[], startDateTime,
+endDateTime, sessions[{ segments[{ caller, callee, media[] }] }]
+```
+
+You extract duration, participant list, and the meeting ID. Then fetch the recording:
+
+```
+GET https://graph.microsoft.com/v1.0/users/{organizer_id}
+    /oneDrive/root:/Recordings/{meeting_title}.mp4:/content
+
+→ 302 redirect to download URL
+→ Stream to blob storage (pipe directly, never buffer in memory)
+```
+
+The critical detail: pipe the download stream directly to blob storage upload. A 1-hour meeting recording can be 500MB+ — buffering in Node.js memory will crash your server. Use a streaming pipe: `response.body.pipe(blobUploadStream)`.
+
+**Webhook subscription renewal:**
+```
+Subscriptions expire after 60 days (callRecords) or 3 days (OneDrive delta)
+→ Store expiry in DB, run a daily job to renew subscriptions expiring within 48hrs
+POST https://graph.microsoft.com/v1.0/subscriptions/{id}
+  { "expirationDateTime": "{new_expiry}" }
+```
+
+---
+
+## 2. Claude prompt design — six AI outputs
+
+The key discipline: one API call, all six outputs as a single structured JSON response. This is cheaper, faster, and produces better results because the model reasons about the full meeting before generating any output.
+
+### Prompt architecture
+
+```
+System prompt:
+  You are an AI assistant for a Canadian financial advisory CRM.
+  You analyse meeting transcripts between financial advisors and clients.
+  You must output valid JSON matching the schema provided exactly.
+  All outputs must be professional, concise, and compliant with
+  Canadian financial services regulations (MFDA, IIROC, PIPEDA).
+  Never fabricate information not present in the transcript.
+  If information for a field is not present, use null.
+
+User prompt:
+  ADVISOR: {advisor_name}, {license_types}
+  CLIENT: {client_name}, {client_profile_summary}
+  MEETING DATE: {date}
+  DURATION: {duration_minutes} minutes
+  PLATFORM: {platform}
+
+  TRANSCRIPT:
+  {formatted_transcript}
+
+  Generate a JSON object with exactly these keys:
+  {json_schema}
+```
+
+### The JSON schema you request
+
+```json
+{
+  "summary": {
+    "discussed": "string — 2-4 sentence narrative of what was covered",
+    "decisions": ["string"],
+    "client_goals_concerns": ["string"],
+    "advisor_recommendations": ["string"]
+  },
+  "action_items": [
+    {
+      "owner": "advisor | client",
+      "description": "string",
+      "due_date": "YYYY-MM-DD | null",
+      "priority": "high | medium | low",
+      "context": "brief quote or context from transcript"
+    }
+  ],
+  "follow_up_email": {
+    "subject": "string",
+    "body": "string — full email body, professional tone, no placeholders"
+  },
+  "compliance_notes": {
+    "kyc_updates": [
+      {
+        "field": "employment | income | family_status | risk_tolerance | net_worth | other",
+        "old_value": "string | null",
+        "new_value": "string",
+        "verbatim_quote": "exact quote from transcript"
+      }
+    ],
+    "suitability_statements": ["string — client statements relevant to suitability"],
+    "advice_given": ["string — specific recommendations made by advisor"],
+    "client_instructions": ["string — explicit instructions given by client"],
+    "concerns_raised": ["string — any concerns or complaints mentioned"]
+  },
+  "plan_triggers": [
+    {
+      "module": "retirement | insurance | resp | estate | tax | debt | portfolio",
+      "trigger_type": "string",
+      "description": "string — what changed or was mentioned",
+      "suggested_action": "string — what the advisor should update in the plan",
+      "verbatim_quote": "exact quote from transcript",
+      "priority": "critical | high | medium"
+    }
+  ],
+  "coaching": {
+    "private_notes": "string — 2-3 specific observations for advisor only",
+    "scores": {
+      "needs_discovery": 0,
+      "client_led_conversation": 0,
+      "planning_gaps_surfaced": 0,
+      "follow_through_on_prior_actions": 0
+    },
+    "strengths": ["string"],
+    "opportunities": ["string — specific improvement suggestions"]
+  }
+}
+```
+
+Scores are integers 1–10. The model is instructed to score conservatively and provide specific evidence for each score in the coaching notes.
+
+### Transcript formatting
+
+How you format the transcript for the prompt matters significantly for output quality:
+
+```
+[00:00] ADVISOR: Good morning Sarah. How are things since we last spoke?
+[00:08] CLIENT: Really well thanks. We actually just got news that we're expecting our second child.
+[00:15] ADVISOR: Congratulations! That's wonderful news. That's going to change a few things
+                  we should look at — your life insurance, and we should talk about an RESP
+                  for the new one as well.
+```
+
+Timestamps help the model locate specific moments when generating verbatim quotes for compliance notes. Speaker labels must be normalised — "Speaker 1" from diarization gets mapped to "ADVISOR" or "CLIENT" based on who scheduled the meeting.
+
+### Plan trigger detection — what to listen for
+
+Give the model explicit examples in the system prompt so it catches these reliably:
+
+```
+RESP triggers:
+  "expecting a baby", "we're pregnant", "just adopted",
+  "our son starts university", "she got accepted to"
+
+Retirement triggers:
+  "thinking of retiring at", "my husband retired last month",
+  "considering early retirement", "my pension starts"
+
+Insurance triggers:
+  "we paid off the mortgage", "my wife quit her job",
+  "I got a promotion", "started my own business",
+  "my father just passed away", "diagnosed with"
+
+Estate triggers:
+  "mother passed away", "inheritance", "updating my will",
+  "my parents moved in with us"
+
+Tax triggers:
+  "sold the cottage", "sold the business", "capital gains",
+  "moved to Alberta" (provincial rate change)
+```
+
+### Follow-up email tone calibration
+
+Include the advisor's communication style in the system prompt. Derive it from a brief style description stored per advisor in `advisors.settings`:
+
+```json
+{
+  "email_style": "warm and conversational, uses first names,
+                  avoids jargon, keeps emails under 300 words"
+}
+```
+
+This gets injected into the system prompt: "The follow-up email should match this style: {email_style}."
+
+### Output parsing and error handling
+
+The model occasionally produces near-valid JSON with minor issues. Parse defensively:
+
+```
+1. Strip any markdown fences (```json ... ```)
+2. Attempt JSON.parse()
+3. On failure: ask Claude to fix the JSON (second call with the broken output)
+4. Validate against Zod schema
+5. On schema mismatch: log the diff, store what parsed correctly,
+   flag the meeting_output for manual review
+6. Never fail silently — if AI processing fails, the meeting
+   still exists with transcript; advisor can re-trigger
+```
+
+---
+
+## 3. In-app WebRTC recording
+
+The in-app recorder captures the advisor's microphone (and optionally system audio) directly in the browser, regardless of what platform the actual meeting is on. This is the most flexible option — it works for Teams desktop, Zoom, phone calls, or any other audio source.
+
+### Architecture
+
+```
+Browser                          Server
+───────                          ──────
+getUserMedia()
+  └── MediaRecorder
+        └── ondataavailable
+              └── chunk (every 5s) ──→ POST /api/v1/meetings/{id}/chunks
+                                           └── append to blob storage
+              └── onstop ───────────→ POST /api/v1/meetings/{id}/recording/complete
+                                           └── assemble chunks
+                                           └── enqueue transcription
+```
+
+### What getUserMedia captures
+
+```
+Microphone only (default):
+  navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+  → Captures advisor's mic + any audio playing through their headset
+  → Works for phone calls taken with headset, Teams/Zoom with headset
+
+System audio (Chrome only, experimental):
+  navigator.mediaDevices.getDisplayMedia({ audio: true, video: false })
+  → Captures all system audio including far-end caller
+  → Requires user to select "Share system audio" in browser prompt
+  → Better quality but requires an extra consent click
+
+Combined (both sides):
+  Run both streams simultaneously → mix with AudioContext → single track
+  This is the best approach for capturing both advisor and client audio
+  in a VoIP call, but requires browser support check
+```
+
+### Chunk assembly
+
+Each `ondataavailable` fires every 5 seconds with a Blob of WebM/Opus audio. You upload each chunk immediately — this avoids losing the recording if the browser crashes or the tab closes.
+
+Server-side chunk tracking:
+
+```
+meetings_recording_chunks table (ephemeral, cleared after assembly):
+  meeting_id, chunk_index, blob_ref, size_bytes, received_at
+
+On complete signal:
+  1. Verify all chunks received (check for gaps in chunk_index)
+  2. Download chunks from blob storage in order
+  3. Concatenate into single WebM file
+  4. If converting to WAV/MP3: use ffmpeg (via child_process or a worker)
+  5. Store final file, delete chunks
+  6. Update meeting.status = 'processing'
+  7. Enqueue transcription job
+```
+
+### Browser-side state machine
+
+```
+States: idle → requesting_permission → recording → paused → stopped → uploading
+
+Key events:
+  Start:    getUserMedia() → create MediaRecorder → start(5000ms timeslice)
+  Pause:    mediaRecorder.pause() → update UI
+  Resume:   mediaRecorder.resume()
+  Stop:     mediaRecorder.stop() → wait for final ondataavailable → POST complete
+  Error:    getUserMedia denied → show permission guide
+            Upload failed → retry with exponential backoff
+            Tab close mid-recording → beacon API to signal incomplete
+
+Visual indicators:
+  Red pulsing dot during recording (CSS animation)
+  Duration counter (increment every second)
+  Upload progress bar during chunk uploads
+  Warning if mic level is silent for > 30s (advisor may be muted)
+```
+
+### Audio quality settings
+
+```javascript
+const constraints = {
+  audio: {
+    channelCount: 1,        // mono — sufficient for speech, smaller files
+    sampleRate: 16000,      // 16kHz — optimal for speech recognition
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  }
+}
+
+const recorderOptions = {
+  mimeType: 'audio/webm;codecs=opus',  // best compression for speech
+  audioBitsPerSecond: 32000            // 32kbps opus = excellent speech quality
+}
+```
+
+At 32kbps, a 60-minute meeting = ~14MB. Very manageable for blob storage and transcription.
+
+---
+
+## 4. Zoom OAuth + webhook flow
+
+Zoom is the simplest of the three integrations because Zoom handles recording natively — you never touch the audio stream directly.
+
+### OAuth setup
+
+```
+App type: Server-to-Server OAuth (no user login required)
+Scopes needed:
+  meeting:read:admin              — read meeting details
+  recording:read:admin            — access cloud recordings
+  meeting:write:admin             — create meetings (optional)
+
+Token endpoint:
+  POST https://zoom.us/oauth/token?grant_type=account_credentials
+       &account_id={account_id}
+  Authorization: Basic base64({client_id}:{client_secret})
+
+Returns: access_token (1hr TTL)
+→ Cache in Redis with 55-min TTL, re-acquire on expiry
+→ No refresh token for Server-to-Server OAuth — just re-acquire
+```
+
+### Webhook events to subscribe
+
+```
+recording.completed    → recording is ready to download
+meeting.ended          → meeting finished (before recording is ready)
+meeting.started        → can use to update meeting status in CRM
+
+Webhook verification:
+  Zoom sends a POST with { event: "endpoint.url_validation", payload: { plainToken } }
+  You must respond with: { plainToken, encryptedToken: sha256(plainToken, webhook_secret) }
+  Store webhook_secret per tenant in meeting_platform_credentials
+```
+
+### Recording download flow
+
+```
+recording.completed webhook payload:
+{
+  "event": "recording.completed",
+  "payload": {
+    "object": {
+      "uuid": "meeting_uuid",
+      "id": "meeting_id",
+      "host_id": "host_user_id",
+      "topic": "Meeting title",
+      "start_time": "2026-03-29T14:00:00Z",
+      "duration": 45,
+      "recording_files": [
+        {
+          "id": "file_id",
+          "file_type": "M4A",          ← audio only — prefer this
+          "file_size": 28400000,
+          "download_url": "https://...",
+          "status": "completed",
+          "recording_type": "audio_only"
+        },
+        {
+          "file_type": "MP4",          ← video + audio — larger
+          "recording_type": "shared_screen_with_speaker_view"
+        },
+        {
+          "file_type": "TRANSCRIPT",   ← Zoom's own transcript (if enabled)
+          "recording_type": "audio_transcript"
+        }
+      ]
+    }
+  }
+}
+```
+
+Prefer the `M4A` / `audio_only` file — it's smaller and sufficient for transcription. If Zoom's own `TRANSCRIPT` file is present, you can use it directly instead of re-transcribing, but quality varies and speaker diarization is often poor. Running Azure Speech or Whisper on the M4A gives better results.
+
+Download pattern:
+
+```
+1. Extract download_url from webhook payload
+2. Append ?access_token={zoom_access_token} to the URL
+3. Stream download directly to blob storage (same pipe pattern as Teams)
+4. Update meeting record with recording_ref, duration, participants
+5. Enqueue meetingProcessingJob
+6. Respond to webhook with 200 immediately (Zoom retries if you don't)
+```
+
+**Critical:** Respond to the Zoom webhook with HTTP 200 within 3 seconds or Zoom marks it failed and retries. Do all processing asynchronously — acknowledge the webhook first, enqueue the job, return 200.
+
+### Linking Zoom meetings to CRM clients
+
+Three options, in order of preference:
+
+The advisor pastes the Zoom meeting ID into the client record before the meeting. Your webhook handler looks up the `platform_meeting_id` to find the client. This is the simplest and most reliable.
+
+Alternatively, the advisor creates the meeting from within the CRM — you call `POST https://api.zoom.us/v2/users/{host_id}/meetings` to create it, store the returned `id`, and the link is automatic.
+
+Or: if the advisor connects their Zoom calendar, you can auto-match by checking whether any upcoming client meetings overlap with the `start_time` in the webhook payload.
+
+---
+
+## 5. Transcription pipeline (Azure Speech)
+
+### Batch transcription flow
+
+Azure Speech batch transcription is the right mode for post-meeting processing — it handles files up to several hours, runs asynchronously, and supports Canadian French. You never need to stream audio to Azure in real time.
+
+```
+Step 1 — Submit job:
+  POST https://{region}.api.cognitive.microsoft.com/speechtotext/v3.2/transcriptions
+  {
+    "contentUrls": ["{blob_sas_url}"],
+    "locale": "en-CA",               ← or "fr-CA" based on client profile
+    "displayName": "{meeting_id}",
+    "properties": {
+      "diarizationEnabled": true,
+      "wordLevelTimestampsEnabled": true,
+      "punctuationMode": "DictatedAndAutomatic",
+      "profanityFilterMode": "None",
+      "channels": [0],               ← mono audio
+      "diarization": {
+        "speakers": { "minCount": 2, "maxCount": 2 }
+      }
+    }
+  }
+  → Returns: { "self": "https://.../transcriptions/{job_id}", "status": "Running" }
+
+Step 2 — Poll for completion (transcriptionPollJob, every 60s):
+  GET https://{region}.api.cognitive.microsoft.com/speechtotext/v3.2
+      /transcriptions/{job_id}
+  → status: "Running" | "Succeeded" | "Failed"
+  → Typical wait: 0.5× to 1× real time (30-min meeting = 15-30 min processing)
+
+Step 3 — Fetch results:
+  GET {transcription.links.files}    ← URL returned in Succeeded response
+  → Returns list of result files
+
+Step 4 — Download result JSON:
+  GET {result_file_url}
+  → Contains: { combinedRecognizedPhrases, recognizedPhrases[] }
+```
+
+### Normalising the Azure output
+
+Azure returns a complex nested format. You normalise it into your clean segment array:
+
+```
+Azure phrase:
+{
+  "speaker": 1,
+  "offset": "PT0S",           ← ISO 8601 duration from start
+  "duration": "PT4.2S",
+  "offsetInTicks": 0,
+  "durationInTicks": 42000000,
+  "nBest": [{
+    "confidence": 0.94,
+    "display": "So let's talk about your retirement timeline.",
+    "words": [{ "word": "So", "offset": "PT0S", "duration": "PT0.2S" }]
+  }]
+}
+
+Your normalised segment:
+{
+  "speaker": "ADVISOR",       ← mapped from speaker number
+  "start": 0.0,               ← seconds from offset
+  "end": 4.2,                 ← start + duration
+  "text": "So let's talk about your retirement timeline.",
+  "confidence": 0.94
+}
+```
+
+Speaker mapping: speaker 1 = whoever spoke first. In most advisor-client meetings the advisor opens, so speaker 1 = ADVISOR. You can verify by checking the first segment against the meeting's scheduled time — if the meeting started within 60 seconds of the advisor's calendar entry, assume they spoke first. Store the mapping in `meeting_transcripts` so it can be corrected manually if wrong.
+
+### Language detection
+
+For bilingual markets (Quebec), run a language detection pass on the first 30 seconds of audio before submitting the full transcription job:
+
+```
+POST https://{region}.api.cognitive.microsoft.com/speechtotext/v3.2/transcriptions
+  locale: "en-CA,fr-CA"   ← comma-separated for auto-detect
+  properties.languageIdentification.candidateLocales: ["en-CA", "fr-CA"]
+```
+
+Azure returns the detected language per segment. Store it in `meeting_transcripts.language`. Pass the detected language to the Claude prompt so it knows to summarise in the right language.
+
+### Cost model
+
+Azure Speech batch transcription pricing (Canada region, 2024):
+```
+Standard: $1.00 per audio hour
+Custom endpoint: $1.40 per audio hour (if you train a custom model)
+
+Estimated cost per meeting:
+  45-min meeting = $0.75
+  1-hour meeting = $1.00
+  → Well within SaaS unit economics at any reasonable subscription price
+```
+
+---
+
+## 6. Compliance consent flow
+
+This is the most legally sensitive part of the feature. PIPEDA requires meaningful consent — passive implied consent is not sufficient for AI-processed recordings of financial advice conversations.
+
+### Consent model
+
+```
+Three-layer consent:
+  1. Platform-level notice (Teams banner, Zoom recording indicator)
+     → Automatic, satisfies notification requirement
+     → Not sufficient alone for AI processing
+
+  2. Pre-meeting email to client (sent 24hrs before scheduled meetings,
+     immediately for ad-hoc meetings)
+     → Explicit statement that the meeting will be recorded
+     → Explicit statement that AI will process the transcript
+     → Opt-out link with one-click unsubscribe
+
+  3. In-app recording consent (for in-app recorder)
+     → Client must click "I consent to recording" button
+       before the advisor can start recording
+     → If client is not present in-app, advisor certifies consent verbally
+```
+
+### Pre-meeting email content (required elements)
+
+```
+Subject: Your upcoming meeting with {advisor_name} — recording notice
+
+Body must include:
+  - Who is conducting the meeting
+  - That the meeting will be audio-recorded
+  - That the transcript will be processed by AI to generate a summary,
+    action items, and compliance notes
+  - Who has access to the recording and AI outputs (advisor, your firm,
+    your compliance department)
+  - How long the recording is retained (your retention policy)
+  - A clear opt-out instruction
+  - Your firm's privacy officer contact
+  - Link to your privacy policy
+
+Opt-out flow:
+  Client clicks opt-out link → lands on page confirming opt-out
+  → Sets consent_status = 'opted_out' in client record
+  → Advisor receives notification: "Client has opted out of recording for this meeting"
+  → Meeting proceeds unrecorded
+```
+
+### Database additions for consent tracking
+
+```sql
+ALTER TABLE clients ADD COLUMN recording_consent_status VARCHAR(50)
+  DEFAULT 'not_sent';
+  -- 'not_sent' | 'email_sent' | 'consented' | 'opted_out'
+ALTER TABLE clients ADD COLUMN recording_consent_updated_at TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN recording_consent_token VARCHAR(255);
+  -- unique token for opt-out link
+
+ALTER TABLE meetings ADD COLUMN consent_status VARCHAR(50)
+  DEFAULT 'pending';
+  -- 'pending' | 'notice_sent' | 'consented' | 'opted_out' | 'advisor_certified'
+ALTER TABLE meetings ADD COLUMN consent_sent_at TIMESTAMPTZ;
+ALTER TABLE meetings ADD COLUMN consent_confirmed_at TIMESTAMPTZ;
+ALTER TABLE meetings ADD COLUMN consent_method VARCHAR(50);
+  -- 'email_confirmed' | 'in_app_click' | 'advisor_verbal_certification'
+```
+
+### Advisor verbal certification flow
+
+For unscheduled meetings where there's no time to send the pre-meeting email, the advisor can verbally ask consent at the start of the meeting and certify it in the CRM:
+
+```
+Before starting the in-app recorder, advisor checks a box:
+  ☐ "I have verbally informed the client that this meeting will be
+     recorded and AI-processed, and they have consented."
+
+This sets:
+  meetings.consent_method = 'advisor_verbal_certification'
+  meetings.consent_confirmed_at = NOW()
+
+The transcript must include the verbal consent exchange —
+  the AI pipeline verifies this in the compliance_notes output:
+  { "verbal_consent_detected": true/false,
+    "consent_quote": "verbatim quote if found" }
+
+If verbal_consent_detected = false but advisor certified:
+  → Flag for compliance review
+  → Don't block the workflow, but require advisor to explain
+```
+
+### Retention policy
+
+```
+Recordings: retain for 7 years (MFDA/IIROC requirement for client records)
+Transcripts: same 7-year retention
+AI outputs: same 7-year retention
+Compliance notes: never auto-deleted regardless of retention policy
+
+Implementation:
+  Add retention_delete_at TIMESTAMPTZ to meetings (= created_at + 7 years)
+  A monthly job soft-deletes recordings past retention date
+  Never delete compliance_notes or plan_snapshots
+  Advisor can request early deletion if client withdraws consent —
+    requires compliance officer approval workflow
+```
+
+### MFDA/IIROC compliance notes requirements
+
+The `compliance_notes` output maps directly to what these regulators require advisors to document:
+
+```
+Know Your Client (KYC) — document any changes to:
+  Employment status, annual income, net worth, risk tolerance,
+  investment knowledge, time horizon, investment objectives
+
+Suitability — document:
+  That recommendations were suitable given the client's KYC profile
+  Any client statements that confirm or change suitability factors
+  Any client instructions that override advisor recommendations
+    (with explicit documentation that the override was client-directed)
+
+Complaints — document:
+  Any expressions of dissatisfaction
+  Any concerns about past advice or performance
+
+The compliance_reviewed flow:
+  AI generates notes → advisor reviews → advisor clicks "Approve notes"
+  → compliance_reviewed = true, reviewed_by = advisor_id, reviewed_at = NOW()
+  → Meeting cannot be marked 'complete' until compliance_reviewed = true
+  → Compliance officer dashboard shows all meetings pending review
+```
+
+---
+
+### How all six connect end-to-end
+
+```
+Advisor schedules meeting in CRM
+  → Consent email fires 24hrs before (or immediately for ad-hoc)
+  → meeting.consent_status = 'notice_sent'
+
+Meeting happens (Teams / Zoom / in-app)
+  → Recording captured via platform webhook or in-app recorder
+  → meeting.status = 'recording'
+
+Recording arrives in blob storage
+  → meetingProcessingJob enqueued
+  → meeting.status = 'processing'
+
+meetingProcessingJob runs:
+  → Submit to Azure Speech → poll via transcriptionPollJob
+  → Store normalised transcript in meeting_transcripts
+  → Call Claude API → parse six outputs → store in meeting_outputs
+  → Create meeting_tasks from action_items
+  → Create plan_stale_flags from plan_triggers
+  → meeting.status = 'ready'
+  → Notify advisor (push notification / email)
+
+Advisor reviews in CRM:
+  → Reads summary, edits if needed
+  → Reviews compliance notes → clicks Approve
+  → Reviews / sends follow-up email
+  → Reviews action items → assigns due dates
+  → Reviews plan triggers → updates financial plan sections
+  → Reads private coaching notes
+  → Marks meeting complete
+```
+
+Want me to go deeper on any specific part — the Claude prompt system prompt in full, the WebRTC chunk assembly code, or the Graph API webhook subscription management?

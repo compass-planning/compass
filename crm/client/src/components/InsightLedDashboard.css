@@ -1,0 +1,4 @@
+/* All Insight-Led tokens, primitives, and legacy Tailwind overrides
+   live in the shared theme so every Hub/Page shell stays consistent
+   with the Dashboard. */
+@import "./insightled/theme.css";

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "{{BOT_APP_ID}}",
+  "developer": {
+    "name": "FinAdvisor",
+    "websiteUrl": "https://www.myfinadvisor.ca",
+    "privacyUrl": "https://www.myfinadvisor.ca/privacy",
+    "termsOfUseUrl": "https://www.myfinadvisor.ca/terms"
+  },
+  "name": {
+    "short": "FinAdvisor Bot",
+    "full": "FinAdvisor Meeting Assistant Bot"
+  },
+  "description": {
+    "short": "AI meeting recorder and transcription assistant for financial advisors",
+    "full": "FinAdvisor Bot joins your Microsoft Teams meetings to automatically capture audio, generate real-time transcripts, and produce AI-powered meeting summaries. Designed for financial advisors to eliminate manual note-taking during client meetings."
+  },
+  "icons": {
+    "outline": "outline-icon.png",
+    "color": "color-icon.png"
+  },
+  "accentColor": "#4F46E5",
+  "bots": [
+    {
+      "botId": "{{BOT_APP_ID}}",
+      "scopes": ["team", "personal", "groupChat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "supportsCalling": true,
+      "supportsVideo": true,
+      "commandLists": [
+        {
+          "scopes": ["personal"],
+          "commands": [
+            {
+              "title": "status",
+              "description": "Check bot connection status"
+            },
+            {
+              "title": "help",
+              "description": "Show available commands"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "compass-feaspq.fly.dev",
+    "compassplanning.app",
+    "www.compassplanning.app"
+  ],
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [
+        {
+          "name": "OnlineMeeting.ReadBasic.Chat",
+          "type": "Application"
+        },
+        {
+          "name": "OnlineMeetingTranscription.Read.Chat",
+          "type": "Application"
+        }
+      ]
+    }
+  },
+  "webApplicationInfo": {
+    "id": "{{BOT_APP_ID}}",
+    "resource": "api://www.myfinadvisor.ca/{{BOT_APP_ID}}"
+  }
+}

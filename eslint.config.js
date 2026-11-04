@@ -12,6 +12,7 @@ export default [
   {
     ignores: [
       "dist/**",
+      "crm/**",   // Compass CRM is a separate project (own tooling)
       "node_modules/**",
       // shadcn/ui auto-generated components — do not lint
       "client/src/components/ui/**",

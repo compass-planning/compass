@@ -1,0 +1,608 @@
+Perfect — full breadth, concept + structure level. Let me lay out the complete service layer.
+
+---
+
+## Node.js service layer — complete layout---
+
+### 1. Project folder structure
+
+```
+/
+├── shared/                          # shared between server + any future client
+│   ├── schema/                      # Drizzle schema (as designed)
+│   │   ├── index.ts
+│   │   ├── tenancy.ts
+│   │   ├── crm.ts
+│   │   ├── carrier.ts
+│   │   ├── planning.ts
+│   │   ├── simulation.ts
+│   │   ├── reference.ts
+│   │   └── modules/
+│   │       ├── retirement.ts
+│   │       ├── insurance.ts
+│   │       ├── resp.ts
+│   │       ├── estate.ts
+│   │       ├── tax.ts
+│   │       ├── cashflow.ts
+│   │       └── portfolio.ts
+│   ├── validators/                  # Zod insert/select schemas
+│   │   ├── auth.ts
+│   │   ├── clients.ts
+│   │   ├── plans.ts
+│   │   ├── carrier.ts
+│   │   └── modules/
+│   │       └── (one per module)
+│   └── types/                       # shared TypeScript types
+│       ├── tenant.ts
+│       ├── plan.ts
+│       └── simulation.ts
+│
+├── server/
+│   ├── index.ts                     # entry point — boots Express + workers
+│   ├── app.ts                       # Express app factory (no listen call)
+│   ├── config/
+│   │   ├── env.ts                   # validated env vars (zod)
+│   │   ├── db.ts                    # Drizzle client singleton
+│   │   └── redis.ts                 # Redis client singleton
+│   │
+│   ├── middleware/
+│   │   ├── index.ts                 # chains all middleware in order
+│   │   ├── apiKeyAuth.ts            # resolves tenant from API key
+│   │   ├── tenantContext.ts         # attaches tenant to req object
+│   │   ├── rateLimiter.ts           # per-tenant rate limiting
+│   │   ├── requestLogger.ts         # structured request logs
+│   │   ├── validate.ts              # Zod validation factory
+│   │   └── errorHandler.ts          # global error handler
+│   │
+│   ├── routes/
+│   │   ├── index.ts                 # mounts all routers under /api/v1
+│   │   ├── auth.ts                  # POST /auth/token
+│   │   ├── advisors.ts
+│   │   ├── clients.ts
+│   │   ├── households.ts
+│   │   ├── plans.ts                 # plan CRUD + status transitions
+│   │   ├── carrierFiles.ts          # file request + polling
+│   │   ├── simulation.ts            # trigger + fetch results
+│   │   ├── webhooks.ts              # carrier callbacks
+│   │   └── modules/
+│   │       ├── retirement.ts
+│   │       ├── insurance.ts
+│   │       ├── resp.ts
+│   │       ├── estate.ts
+│   │       ├── tax.ts
+│   │       ├── cashflow.ts
+│   │       └── portfolio.ts
+│   │
+│   ├── services/                    # business logic, no HTTP concerns
+│   │   ├── tenantService.ts
+│   │   ├── advisorService.ts
+│   │   ├── clientService.ts
+│   │   ├── planService.ts           # orchestrates module + simulation
+│   │   ├── snapshotService.ts       # E&O snapshot creation
+│   │   ├── staleFlagService.ts      # flags + resolves stale plan sections
+│   │   └── modules/
+│   │       ├── retirementService.ts
+│   │       ├── insuranceService.ts
+│   │       ├── respService.ts
+│   │       ├── estateService.ts
+│   │       ├── taxService.ts
+│   │       ├── cashflowService.ts
+│   │       └── portfolioService.ts
+│   │
+│   ├── engine/                      # pure calculation — no DB, no HTTP
+│   │   ├── monteCarlo.ts            # core simulation runner
+│   │   ├── cholesky.ts              # correlated return draws
+│   │   ├── mortality.ts             # longevity draws from life tables
+│   │   ├── modules/
+│   │   │   ├── retirement.ts        # yearlyStepFn for retirement
+│   │   │   ├── insurance.ts
+│   │   │   ├── resp.ts
+│   │   │   ├── estate.ts
+│   │   │   ├── tax.ts
+│   │   │   └── rrif.ts              # drawdown optimizer
+│   │   └── reference/
+│   │       ├── cppOas.ts            # CPP/OAS benefit calculations
+│   │       ├── taxBrackets.ts       # marginal rate lookups
+│   │       ├── probate.ts           # provincial probate fee schedules
+│   │       └── cesg.ts              # CESG/CLB grant logic
+│   │
+│   ├── jobs/                        # BullMQ workers + queue definitions
+│   │   ├── queues.ts                # queue instances (carrierSync, recalc)
+│   │   ├── workers.ts               # boots all workers
+│   │   ├── carrierSyncJob.ts        # fetches carrier files, parses, stores
+│   │   ├── recalcJob.ts             # picks up stale flags, re-runs engine
+│   │   └── adapters/                # one file per carrier
+│   │       ├── index.ts             # registry: slug → adapter
+│   │       ├── manulife.ts
+│   │       ├── canadaLife.ts
+│   │       └── iaFinancial.ts
+│   │
+│   └── lib/                         # stateless utilities
+│       ├── encryption.ts            # AES-256 for SIN, secrets
+│       ├── signedUrl.ts             # blob storage pre-signed URLs
+│       ├── logger.ts                # structured logging (pino)
+│       ├── errors.ts                # typed error classes
+│       └── pagination.ts            # cursor-based pagination helper
+│
+├── scripts/
+│   ├── seed.ts                      # reference data seeding
+│   └── createTenant.ts              # CLI to provision a new tenant
+│
+├── drizzle.config.ts
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+### 2. Environment / config setup
+
+All env vars validated at boot — if one is missing the process refuses to start rather than failing silently at runtime.
+
+```
+server/config/env.ts
+  └── Uses Zod to parse process.env
+  └── Exports a typed config object used everywhere
+  └── Never import process.env directly elsewhere in the codebase
+
+Required vars:
+  DATABASE_URL          Replit-managed PostgreSQL connection string
+  REDIS_URL             Redis connection (Upstash or Replit add-on)
+  API_KEY_SALT          Salt for bcrypt key hashing
+  ENCRYPTION_KEY        32-byte hex key for AES-256 (SIN, secrets)
+  BLOB_STORAGE_URL      Azure/S3 blob endpoint
+  BLOB_STORAGE_KEY      Blob storage access key
+  NODE_ENV              'development' | 'production' | 'test'
+  PORT                  Default 3000
+
+Optional / per-carrier:
+  MANULIFE_BASE_URL
+  CANADA_LIFE_BASE_URL
+  IA_FINANCIAL_BASE_URL
+  (credentials stored in DB secrets table, not env)
+```
+
+**Concept:** Config is validated once at startup and exported as a frozen object. Every service imports `config` not `process.env`. This means misconfiguration fails loudly at boot, not silently mid-request.
+
+---
+
+### 3. Authentication middleware
+
+```
+server/middleware/apiKeyAuth.ts
+
+Concept:
+  1. Extract Bearer token from Authorization header
+  2. Hash the incoming token with bcrypt (same salt as stored hash)
+  3. Look up api_keys table WHERE key_hash = hash AND deleted_at IS NULL
+  4. Check expires_at if set
+  5. Load the tenant record for that key
+  6. Attach { tenantId, tenant, apiKeyId } to req.context
+  7. Update api_keys.last_used_at asynchronously (fire-and-forget)
+  8. Reject with 401 if any step fails — never leak which step
+
+server/middleware/tenantContext.ts
+
+Concept:
+  Runs after apiKeyAuth
+  Sets the Postgres session variable: SET LOCAL app.tenant_id = '...'
+  This activates the Row Level Security policy on every table
+  All subsequent Drizzle queries in this request are automatically scoped
+  Never trust tenantId from the request body — always use req.context.tenantId
+```
+
+**Security rule:** The tenant isolation is enforced at two levels — RLS in the DB, and `req.context.tenantId` always overriding any tenant ID in the request payload. Belt and suspenders.
+
+---
+
+### 4. Zod validation layer
+
+```
+server/middleware/validate.ts
+
+Concept:
+  A factory function that returns an Express middleware
+  Takes a Zod schema and a target ('body' | 'query' | 'params')
+  Parses the target against the schema
+  On success: attaches typed parsed data to req.validated
+  On failure: calls next(new ValidationError(issues))
+  Never throws — always passes to error handler
+
+Usage in routes:
+  router.post('/plans',
+    validate(insertPlanSchema, 'body'),
+    planController.create
+  )
+
+shared/validators/plans.ts
+
+  insertPlanSchema       — from createInsertSchema(plans)
+  updatePlanSchema       — Partial of insert, omitting immutable fields
+  planQuerySchema        — query params: status, clientId, page, limit
+  planIdParamSchema      — { id: z.string().uuid() }
+
+Module validators follow same pattern:
+  insertRetirementProfileSchema
+  updateRetirementProfileSchema
+  triggerSimulationSchema        — { scenario, simulationCount }
+```
+
+**Key discipline:** Validators live in `shared/validators/` not in routes. Routes import validators, not the other way around. This keeps validation reusable if you add a CLI, a worker, or a second transport later.
+
+---
+
+### 5. Express route handlers
+
+Routes are thin — they validate input, call a service, and return a response. No business logic lives in route files.
+
+```
+server/routes/index.ts
+  Mounts all routers:
+  /api/v1/auth          → auth.ts
+  /api/v1/advisors      → advisors.ts
+  /api/v1/clients       → clients.ts
+  /api/v1/households    → households.ts
+  /api/v1/plans         → plans.ts
+  /api/v1/carrier-files → carrierFiles.ts
+  /api/v1/simulation    → simulation.ts
+  /api/v1/webhooks      → webhooks.ts
+  /api/v1/plans/:planId/modules/retirement  → modules/retirement.ts
+  (repeat for each module)
+
+server/routes/plans.ts
+
+  GET    /plans                     list plans for tenant (paginated)
+  GET    /plans/:id                 get single plan with all sections
+  POST   /plans                     create plan (also creates default assumptions)
+  PATCH  /plans/:id                 update title, status
+  DELETE /plans/:id                 soft delete
+  POST   /plans/:id/snapshot        create E&O snapshot
+  GET    /plans/:id/action-items    list open action items
+  GET    /plans/:id/stale           list stale module flags
+
+server/routes/carrierFiles.ts
+
+  POST   /carrier-files/request     initiate async file fetch
+  GET    /carrier-files/:requestId  poll status / get signed URL
+  GET    /clients/:clientId/files   list available files for client
+
+server/routes/simulation.ts
+
+  POST   /plans/:planId/simulate    trigger recalculation (all modules)
+  POST   /plans/:planId/simulate/:module  trigger single module
+  GET    /plans/:planId/results     fetch all simulation results
+  GET    /plans/:planId/results/:module   fetch single module results
+
+server/routes/modules/retirement.ts
+
+  GET    /plans/:planId/modules/retirement        get profile
+  PUT    /plans/:planId/modules/retirement        upsert profile
+  PATCH  /plans/:planId/modules/retirement        partial update
+```
+
+**Response envelope — consistent across all routes:**
+
+```
+Success:
+  { data: <payload>, meta: { requestId, timestamp } }
+
+List:
+  { data: [...], meta: { total, page, limit, requestId } }
+
+Error:
+  { error: { code, message, details? }, meta: { requestId } }
+```
+
+---
+
+### 6. Calculation engine service
+
+```
+server/engine/
+
+Concept:
+  The engine directory is a pure computation zone
+  No imports from server/ (no DB, no HTTP, no config)
+  All functions are pure: same inputs always produce same outputs
+  Fully unit-testable without a database connection
+
+server/engine/monteCarlo.ts
+
+  runMonteCarlo(params) → SimulationResult
+    params:
+      assumptions       PlanAssumptions record
+      years             number
+      initialState      module-specific state object
+      yearlyStepFn      (state, draws) => state
+      successConditionFn (state, year) => boolean
+    
+    internally:
+      draws correlated returns via cholesky.ts each year
+      draws longevity from mortality.ts
+      runs N simulations (params.assumptions.simulationCount)
+      collects success/failure + final state per simulation
+      computes percentiles via fast-sort
+    
+    returns:
+      successRate       0.0 – 1.0
+      p10/p25/p50/p75/p90 of primary metric
+      sensitivityData   one-at-a-time shifts
+      medianFinalState  for module-specific outputs
+
+server/engine/cholesky.ts
+
+  buildCholeskyFactor(correlationMatrix) → L (lower triangular)
+  drawCorrelatedReturns(L, means, stdDevs) → { equity, bond, inflation }
+  
+  Called once per simulation year
+  Uses Box-Muller to generate independent normals
+  Applies L · Z to correlate them
+  Converts to log-normal for each asset class
+
+server/engine/mortality.ts
+
+  drawLifeExpectancy(age, sex, smoker) → deathAge
+  
+  Uses Statistics Canada Life Tables (2020–2022)
+  Stored as lookup arrays, not DB queries
+  Returns a random draw from the conditional survival distribution
+  Used by retirement engine to determine plan horizon per simulation
+
+server/engine/modules/retirement.ts
+
+  buildRetirementStepFn(profile, assumptions) → yearlyStepFn
+  
+  Closure that captures the retirement profile
+  Returns the step function runMonteCarlo expects
+  Each year: grows accounts, applies contributions or withdrawals,
+             runs RRIF optimizer, applies CPP/OAS, checks ruin
+
+server/engine/modules/rrif.ts
+
+  optimizeDrawdown(state, targetIncome, age) → withdrawalPlan
+  
+  Implements the three-step drawdown heuristic:
+    1. mandatory RRIF minimum
+    2. OAS clawback check
+    3. fill gap: TFSA → non-reg → extra RRIF
+  Returns: { rrif, tfsa, nonReg } withdrawal amounts + tax estimate
+
+server/engine/reference/cppOas.ts
+
+  getCppBenefit(estimatedMonthly, startAge, currentAge) → monthlyAmount
+  getOasBenefit(startAge, currentAge, netIncome) → { gross, clawback, net }
+  getCppBreakevenAge(startAge1, startAge2, estimatedMonthly) → age
+
+server/engine/reference/taxBrackets.ts
+
+  getMarginalRate(income, province, year) → rate
+  getEffectiveTax(income, province, year) → taxAmount
+  
+  Reads from in-memory bracket arrays (seeded from DB at startup)
+  Not a DB query on every calculation — loaded once at boot
+
+server/engine/reference/probate.ts
+
+  getProbateFee(province, estateValue) → fee
+  
+  Provincial schedules stored as step functions
+  Returns 0 for Quebec (notarial system)
+  Flags Alberta's cap correctly
+
+server/engine/reference/cesg.ts
+
+  calculateCesg(contribution, lifetimeReceived, subscriberIncome, childCount)
+    → { basicCesg, additionalCesg, clb, totalGrant }
+  
+  Enforces lifetime limit ($7,200)
+  Applies ACESG income thresholds
+  Applies CLB eligibility rules
+```
+
+**Key rule:** Services in `server/services/` call the engine and then write results to the DB. The engine itself never touches the DB. This means you can run the entire calculation engine in a test without any database connection.
+
+---
+
+### 7. Carrier sync job (BullMQ)
+
+```
+server/jobs/queues.ts
+
+  Two queues:
+    carrierSyncQueue    — processes carrier file fetch requests
+    recalcQueue         — processes plan recalculations from stale flags
+
+  Both backed by Redis
+  carrierSyncQueue: concurrency 5, exponential backoff on failure
+  recalcQueue: concurrency 3 (CPU-heavier), lower priority
+
+server/jobs/carrierSyncJob.ts
+
+  Job payload: { requestId, tenantId, clientId, carrierSlug, fileTypes }
+
+  Step 1 — Load credentials
+    Fetch tenant_carrier_credentials for this tenant + carrier
+    Resolve secret from secrets manager using secret_ref
+
+  Step 2 — Call carrier adapter
+    adapters/index.ts registry maps carrierSlug → adapter class
+    adapter.getClientFiles(advisorCode, clientId, fileTypes)
+    Returns: raw carrier payload
+
+  Step 3 — Parse and normalise
+    Each adapter implements its own parser
+    Outputs: { policies: PolicyRecord[], holdings: HoldingRecord[] }
+
+  Step 4 — Upsert to DB
+    Soft-delete old policies/holdings for this client + carrier
+    Insert new records
+    Update carrier_file_requests.status = 'complete'
+    Store raw file in blob storage, set signed URL
+
+  Step 5 — Flag stale plans
+    Find all active plans for this client
+    Insert plan_stale_flags rows for affected modules
+    Enqueue recalcJob for each stale plan
+
+  Step 6 — Send webhook (if registered)
+    POST to tenant's registered webhook URL
+    Payload: { requestId, clientId, status, modulesAffected }
+
+  On failure:
+    Update carrier_file_requests.status = 'failed', set error_message
+    BullMQ retries up to 3 times with exponential backoff
+
+server/jobs/recalcJob.ts
+
+  Job payload: { planId, tenantId, modules: string[] }
+
+  Step 1 — Load plan + assumptions
+    Fetch plan with all module profiles and all three assumption scenarios
+
+  Step 2 — Load reference data
+    Tax brackets and benefit rates already in memory (loaded at boot)
+
+  Step 3 — Run engine per module per scenario
+    for each module in modules:
+      for each scenario in ['base', 'optimistic', 'stress']:
+        load module profile from DB
+        call engine module's buildStepFn
+        call runMonteCarlo
+        upsert simulation_results row (ON CONFLICT DO UPDATE)
+
+  Step 4 — Resolve stale flags
+    Mark plan_stale_flags.resolved_at = NOW() for affected modules
+
+  Step 5 — Generate action items
+    Compare results against thresholds
+    Insert/update plan_action_items:
+      successRate < 0.75 → 'critical' retirement action item
+      insuranceGap > 0   → 'high' insurance action item
+      respShortfall > 0  → 'medium' resp action item
+      policiesNamingEstate > 0 → 'critical' estate action item
+
+server/jobs/adapters/index.ts
+
+  Registry pattern:
+    const adapters: Record<string, ICarrierAdapter> = {
+      'manulife':     new ManulifeAdapter(config),
+      'canada-life':  new CanadaLifeAdapter(config),
+      'ia-financial': new IaFinancialAdapter(config),
+    }
+    export function getAdapter(slug: string): ICarrierAdapter
+
+  ICarrierAdapter interface:
+    getClientFiles(advisorCode, clientId, fileTypes) → Promise<RawCarrierPayload>
+    parseFiles(payload) → { policies, holdings }
+    healthCheck() → Promise<boolean>
+
+server/jobs/adapters/manulife.ts
+
+  Implements ICarrierAdapter
+  Auth: OAuth2 client credentials flow, token cached in Redis with TTL
+  Transport: REST API
+  Parser: maps Manulife-specific field names to normalised schema
+  Handles pagination if carrier returns multiple pages
+```
+
+---
+
+### 8. Error handling pattern
+
+```
+server/lib/errors.ts
+
+  Typed error class hierarchy:
+    AppError (base)
+      ├── ValidationError    (400) — Zod failures
+      ├── AuthError          (401) — bad/missing API key
+      ├── ForbiddenError     (403) — valid key, wrong tenant
+      ├── NotFoundError      (404) — resource doesn't exist or soft-deleted
+      ├── ConflictError      (409) — unique constraint violations
+      ├── CarrierError       (502) — carrier API returned error
+      └── InternalError      (500) — unexpected failures
+
+  Each has:
+    statusCode    HTTP status
+    code          machine-readable string ('PLAN_NOT_FOUND')
+    message       human-readable string
+    details?      Zod issues, carrier error payload, etc.
+
+server/middleware/errorHandler.ts
+
+  Global Express error handler (4-argument middleware)
+  
+  If error is AppError:
+    log at appropriate level (warn for 4xx, error for 5xx)
+    return { error: { code, message, details }, meta: { requestId } }
+  
+  If error is unknown:
+    wrap in InternalError
+    log full stack with requestId
+    never leak stack trace to client in production
+
+  Async route errors:
+    All route handlers wrapped in asyncHandler(fn)
+    Catches promise rejections and calls next(error)
+    No try/catch boilerplate in every route handler
+
+server/lib/logger.ts
+
+  Pino-based structured logger
+  Every log entry includes: { tenantId, requestId, level, msg, timestamp }
+  requestId generated at middleware entry, attached to req.context
+  In production: JSON output (Replit log drain)
+  In development: pino-pretty for readable output
+  Never log: API keys, SIN, encryption keys, signed URLs
+```
+
+---
+
+### How it all flows together
+
+A complete request lifecycle — advisor triggers a plan recalculation:
+
+```
+POST /api/v1/plans/:planId/simulate
+
+1. apiKeyAuth          → resolves tenantId, attaches to req.context
+2. tenantContext        → sets RLS session variable in DB connection
+3. rateLimiter         → checks per-tenant request budget
+4. requestLogger       → logs inbound with requestId
+5. validate(schema)    → parses body, attaches req.validated
+6. planRouter          → matched to simulationController.trigger
+7. planService         → verifies advisor owns this plan (tenantId + advisorId check)
+8. staleFlagService    → marks all modules stale
+9. recalcQueue.add()   → enqueues recalcJob, returns jobId immediately
+10. Response: 202 Accepted { data: { jobId }, meta: { requestId } }
+
+Meanwhile, in the worker process:
+11. recalcJob picks up from queue
+12. Loads plan + assumptions from DB
+13. For each module × scenario: calls engine → writes simulation_results
+14. Resolves stale flags
+15. Generates action items
+16. If tenant has webhook registered: POSTs completion event
+
+Advisor polls: GET /api/v1/plans/:planId/results
+→ Returns simulation_results for all modules + action items
+```
+
+---
+
+### What to build in what order
+
+```
+Week 1:  env config + DB client + logger + error classes
+Week 2:  auth middleware + tenant context + basic client/advisor routes
+Week 3:  plan CRUD routes + Zod validators + response envelope
+Week 4:  carrier adapter (Manulife first) + BullMQ queues + sync job
+Week 5:  engine core (monteCarlo + cholesky + mortality)
+Week 6:  retirement engine module + recalc job + simulation results route
+Week 7:  insurance + RESP engine modules
+Week 8:  remaining engine modules (estate, tax, cashflow, portfolio)
+Week 9:  action item generation + stale flag lifecycle
+Week 10: webhooks + signed URL delivery + snapshot service
+```
+
+Want to start writing actual code for any specific layer, or move into the frontend architecture next?

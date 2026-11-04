@@ -8,6 +8,8 @@ import cors            from "cors";
 import helmet          from "helmet";
 import rateLimit       from "express-rate-limit";
 import path            from "path";
+import fs              from "fs";
+import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import { pool, poolCA, poolUS, jurisdictionStore } from "./db/index.js";
 import { authRouter }       from "./routes/auth.js";
@@ -262,6 +264,39 @@ app.use(helmet({
 // ── Request logging (pino) ───────────────────────────────────────────────────────
 app.use(httpLogger);
 
+// ── Compass CRM ────────────────────────────────────────────────────────────────
+// Compass CRM is a separate app in ./crm (own dependencies, own login, own Postgres
+// schema "crm") served by this same server and the same Fly app:
+//   /crm/*      → CRM web client (login, register, app)
+//   /api/crm/*  → CRM API (session cookie auth, independent of Compass Planning's JWT)
+// Mounted BEFORE Compass's CORS / body parsers / rate limiters — the CRM brings its own.
+// It starts in the background after the server is listening; Compass Planning never
+// depends on it, and a CRM failure is logged, not fatal.
+let crmApi:    express.RequestHandler | null = null;
+let crmClient: express.RequestHandler | null = null;
+app.use("/api/crm", (req, res, next) =>
+  crmApi ? crmApi(req, res, next) : res.status(503).json({ message: "Compass CRM is not available" }));
+app.use("/crm", (req, res, next) =>
+  crmClient ? crmClient(req, res, next) : res.status(503).type("text/plain").send("Compass CRM is not available"));
+
+async function startCrm() {
+  if (process.env.CRM_ENABLED === "false") { logger.info("Compass CRM disabled (CRM_ENABLED=false)"); return; }
+  const bundle = path.resolve(process.cwd(), "crm/dist/server.cjs");
+  if (!fs.existsSync(bundle)) {
+    logger.warn({ bundle }, "Compass CRM bundle not found — run `npm run build:crm`; /crm is disabled");
+    return;
+  }
+  try {
+    const crm  = createRequire(import.meta.url)(bundle);
+    const app_ = await crm.createCrmApp();
+    crmApi    = crm.crmApiHandler(app_);
+    crmClient = crm.crmStaticHandler();
+    logger.info("Compass CRM mounted at /crm");
+  } catch (err) {
+    logger.error({ err }, "Compass CRM failed to start — Compass Planning is unaffected");
+  }
+}
+
 // ── Item 2b: CORS — locked to configured origin ────────────────────────────────
 const allowedOrigins = [
   process.env.CLIENT_URL ?? "http://localhost:5173",
@@ -397,6 +432,7 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 runMigrations().then(() => {
   app.listen(PORT, "0.0.0.0", () => logger.info({ port: PORT }, "FP server started"));
+  void startCrm();
 });
 
 export default app;

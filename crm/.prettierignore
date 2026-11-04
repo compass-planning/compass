@@ -1,0 +1,6 @@
+﻿dist/
+node_modules/
+migrations/
+*.cjs
+attached_assets/
+server/teams-bot/manifest.json

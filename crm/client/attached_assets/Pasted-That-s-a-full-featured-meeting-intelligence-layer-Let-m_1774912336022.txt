@@ -1,0 +1,220 @@
+That's a full-featured meeting intelligence layer. Let me design the complete architecture.---
+
+### Platform integrations
+
+**Microsoft Teams** is the most complex of the three. You invite a bot into the meeting using the Microsoft Teams Bot Framework — the bot joins as a participant, receives the audio stream via the Teams calling API, and can also trigger Teams\u2019 native recording via the Graph API (which drops an MP4 into the organiser\u2019s OneDrive). The simpler path for phase 1 is to use the Graph API recording rather than streaming audio: when a meeting ends, a webhook fires, you fetch the recording from OneDrive via Graph, download it, and hand it off to transcription. This avoids real-time streaming complexity and works with standard Teams licenses.
+
+For the bot invitation flow specifically: the advisor clicks \u201cInvite bot\u201d in your CRM, your backend calls the Graph API to add the bot as a meeting participant using the meeting\u2019s join URL. The bot joins, signals it\u2019s recording, and the advisor gets a visual indicator in Teams that the session is being captured.
+
+**Zoom** is cleaner. You register a Zoom OAuth app, request cloud recording permissions, and subscribe to the `recording.completed` webhook. When a meeting ends, Zoom sends a webhook with the recording download URL. You fetch the MP4/M4A, store it in blob storage, and enqueue transcription. No bot required \u2014 Zoom\u2019s cloud recording handles capture natively.
+
+**In-app recording** uses the browser\u2019s MediaStream API. The advisor clicks Record, you capture `getUserMedia({ audio: true, video: false })` (or both for video), feed it into a `MediaRecorder`, and chunk the data to your server via WebSocket or chunked HTTP upload as the meeting progresses. On stop, you assemble the chunks into a WAV/WebM file and hand it to transcription. This works for any call the advisor takes \u2014 phone, Teams desktop, anything \u2014 as long as they\u2019re on your CRM at the time.
+
+---
+
+### Transcription engine
+
+**Azure AI Speech** is the right choice for a Canadian-market product. It supports both English and Canadian French, has strong speaker diarization (labelling who said what), runs in Azure Canada Central (data residency satisfied), and integrates naturally with blob storage. You submit a batch transcription job pointing at your blob URL and poll for completion \u2014 typical turnaround is 0.5\u00D7 to 1\u00D7 real time.
+
+**OpenAI Whisper** (self-hosted or via API) is a strong alternative if you want to avoid Azure lock-in, but speaker diarization requires an additional library (pyannote.audio) and Canadian French accuracy is slightly lower.
+
+The transcript output you want to store is a structured JSON array \u2014 not a flat string:
+
+```json
+[
+  { "speaker": "Advisor", "start": 0.0, "end": 4.2,
+    "text": "So let\u2019s talk about your retirement timeline." },
+  { "speaker": "Client", "start": 4.5, "end": 9.1,
+    "text": "I\u2019m thinking 62, maybe earlier if the portfolio does well." }
+]
+```
+
+Speaker labels come from diarization. You map \u201cSpeaker 1\u201d / \u201cSpeaker 2\u201d to advisor / client based on who scheduled the meeting in your CRM.
+
+---
+
+### AI processing pipeline
+
+This is where the real value is created. Post-transcription, you run a single structured Claude API call per meeting with the full transcript, asking for all six outputs in one pass as structured JSON. One call is cheaper and faster than six separate calls, and it allows the model to reason about the meeting holistically \u2014 the compliance notes and plan triggers are more accurate when the model has seen the full context before generating any output.
+
+**The six outputs:**
+
+**Meeting summary** \u2014 a structured summary with four sections: what was discussed, key decisions made, client\u2019s stated goals and concerns, and advisor\u2019s recommendations. Not a bullet-point dump \u2014 a coherent narrative the advisor can read in 60 seconds and attach to the client file.
+
+**Action items** \u2014 extracted as structured objects with owner (advisor vs client), description, and suggested due date inferred from any deadlines mentioned in the conversation. Items are written to the `meeting_tasks` table and can be promoted to the CRM\u2019s task system.
+
+**Follow-up email draft** \u2014 a complete email from advisor to client recapping the meeting, confirming next steps, and listing any documents the client needs to provide. The advisor reviews and sends directly from the CRM. Tone should match the advisor\u2019s communication style \u2014 you can fine-tune this by including a brief style prompt derived from past sent emails.
+
+**Compliance notes** \u2014 this is the highest-stakes output. The model extracts: KYC updates mentioned (change in employment, income, family status, risk tolerance), suitability-relevant statements (client expressed concern about volatility, client confirmed long time horizon), any advice given, and any client instructions received. These notes are stored separately with a `compliance_reviewed` flag \u2014 the advisor must explicitly sign off before the meeting is marked complete. This creates a defensible audit trail.
+
+**Plan triggers** \u2014 the model listens for statements that should update the financial plan: \u201cWe\u2019re expecting a baby\u201d (RESP trigger), \u201cI\u2019m thinking of retiring at 60\u201d (retirement age change), \u201cWe just paid off the mortgage\u201d (debt module update), \u201cMy mother passed away\u201d (estate / inheritance trigger). Each detected trigger creates a `plan_stale_flag` entry and an action item prompting the advisor to update the relevant plan section.
+
+**Advisor coaching** \u2014 private to the advisor only, never shown to the client. The model scores the meeting on: did the advisor discover the client\u2019s full financial picture, were needs-based questions asked, were any obvious planning gaps surfaced, was the conversation client-led or advisor-led. Delivered as a brief private note with 2\u20133 specific observations. Over time this builds a coaching history per advisor.
+
+---
+
+### Database schema additions
+
+```sql
+CREATE TABLE meetings (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id         UUID NOT NULL REFERENCES tenants(id),
+  client_id         UUID NOT NULL REFERENCES clients(id),
+  advisor_id        UUID NOT NULL REFERENCES advisors(id),
+  platform          VARCHAR(50) NOT NULL,
+  -- 'teams' | 'zoom' | 'in_app'
+  platform_meeting_id VARCHAR(255),      -- Teams/Zoom native meeting ID
+  title             VARCHAR(255),
+  scheduled_at      TIMESTAMPTZ,
+  started_at        TIMESTAMPTZ,
+  ended_at          TIMESTAMPTZ,
+  duration_seconds  INTEGER,
+  status            VARCHAR(50) NOT NULL DEFAULT 'scheduled',
+  -- 'scheduled' | 'recording' | 'processing' | 'ready' | 'failed'
+  recording_ref     TEXT,               -- blob storage path
+  recording_size_bytes BIGINT,
+  participants      JSONB DEFAULT '[]', -- [{ name, email, role }]
+  deleted_at        TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE meeting_transcripts (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  meeting_id    UUID NOT NULL REFERENCES meetings(id) UNIQUE,
+  tenant_id     UUID NOT NULL REFERENCES tenants(id),
+  segments      JSONB NOT NULL,
+  -- [{ speaker, start, end, text, confidence }]
+  full_text     TEXT NOT NULL,          -- flat join for full-text search
+  language      VARCHAR(10) DEFAULT 'en-CA',
+  word_count    INTEGER,
+  transcribed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE meeting_outputs (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  meeting_id            UUID NOT NULL REFERENCES meetings(id) UNIQUE,
+  tenant_id             UUID NOT NULL REFERENCES tenants(id),
+  -- AI generated outputs
+  summary               TEXT,
+  key_decisions         JSONB,          -- [{ decision, context }]
+  client_goals          JSONB,          -- [{ goal, urgency }]
+  follow_up_email_draft TEXT,
+  compliance_notes      JSONB,
+  -- { kyc_updates: [], suitability_notes: [], advice_given: [], client_instructions: [] }
+  plan_triggers         JSONB,
+  -- [{ module, trigger_type, description, suggested_action }]
+  coaching_notes        TEXT,           -- private to advisor
+  coaching_score        JSONB,
+  -- { needs_discovery: 0-10, client_led: 0-10, gaps_surfaced: 0-10 }
+  -- Workflow status
+  compliance_reviewed   BOOLEAN DEFAULT FALSE,
+  compliance_reviewed_by UUID REFERENCES advisors(id),
+  compliance_reviewed_at TIMESTAMPTZ,
+  email_sent            BOOLEAN DEFAULT FALSE,
+  email_sent_at         TIMESTAMPTZ,
+  generated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE meeting_tasks (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  meeting_id    UUID NOT NULL REFERENCES meetings(id),
+  tenant_id     UUID NOT NULL REFERENCES tenants(id),
+  client_id     UUID NOT NULL REFERENCES clients(id),
+  owner         VARCHAR(50) NOT NULL,   -- 'advisor' | 'client'
+  description   TEXT NOT NULL,
+  due_date      DATE,
+  priority      VARCHAR(20) DEFAULT 'medium',
+  status        VARCHAR(50) DEFAULT 'open',
+  -- 'open' | 'in_progress' | 'complete' | 'cancelled'
+  promoted_to_plan_action BOOLEAN DEFAULT FALSE,
+  completed_at  TIMESTAMPTZ,
+  deleted_at    TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE meeting_platform_credentials (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id     UUID NOT NULL REFERENCES tenants(id),
+  platform      VARCHAR(50) NOT NULL,
+  access_token  TEXT,                   -- encrypted
+  refresh_token TEXT,                   -- encrypted
+  token_expires_at TIMESTAMPTZ,
+  scope         TEXT,
+  metadata      JSONB DEFAULT '{}',
+  deleted_at    TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (tenant_id, platform)
+);
+
+-- Indexes
+CREATE INDEX idx_meetings_client   ON meetings(tenant_id, client_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_meetings_advisor  ON meetings(tenant_id, advisor_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_meetings_status   ON meetings(tenant_id, status) WHERE deleted_at IS NULL;
+CREATE INDEX idx_tasks_client_open ON meeting_tasks(tenant_id, client_id)
+  WHERE status = 'open' AND deleted_at IS NULL;
+```
+
+---
+
+### BullMQ job additions
+
+Two new queues slot into the existing job infrastructure:
+
+**`meetingProcessingQueue`** handles the post-meeting pipeline. Job payload is `{ meetingId, tenantId }`. Steps: download recording from blob \u2192 submit to Azure Speech transcription \u2192 poll until complete \u2192 store transcript \u2192 run Claude AI pipeline \u2192 write `meeting_outputs` \u2192 create `meeting_tasks` \u2192 fire any `plan_stale_flags` \u2192 notify advisor via webhook/push.
+
+**`transcriptionPollQueue`** is a delayed job that polls Azure Speech for completion every 60 seconds. When complete, it hands off to the AI pipeline step. This avoids blocking the main processing worker while waiting for transcription.
+
+---
+
+### Microsoft Teams bot setup
+
+The Teams integration requires an Azure Bot registration and a Teams app manifest. The advisor flow is:
+
+The advisor schedules a meeting in Teams, then opens the client record in your CRM and clicks \u201cAttach to Teams meeting\u201d. They paste the meeting join URL (or your app connects via Calendar API to find upcoming meetings). Your backend stores the `platform_meeting_id`. When the meeting ends, the Graph API fires a `callRecords` webhook to your server, you fetch the recording from the organiser\u2019s OneDrive, and the processing pipeline kicks off automatically.
+
+For the \u201cinvite bot\u201d feature specifically: the bot joins using the `communications/calls` Graph API endpoint with the meeting\u2019s join URL. The bot appears in the meeting as \u201c[Your CRM] Recorder\u201d with a microphone icon. Teams displays a legal recording notice to all participants automatically \u2014 which also satisfies your PIPEDA consent requirement.
+
+---
+
+### Compliance and consent considerations
+
+Recording consent is non-negotiable under PIPEDA and provincial privacy laws. The required flow:
+
+Before the meeting starts, your CRM sends the client a pre-meeting email stating the session will be recorded and summarized by AI, with an opt-out link. The recording only begins if the client has not opted out. For Teams and Zoom, the platform\u2019s native recording notice (displayed to all participants) also satisfies the notification requirement but you should retain the pre-meeting email as documentary evidence.
+
+The `compliance_notes` output and the `compliance_reviewed` flag create a two-step process: AI extracts the notes, advisor reviews and signs off. The advisor\u2019s sign-off is timestamped and stored. This mirrors how most E&O-conscious advisory firms handle meeting documentation today, just automated.
+
+---
+
+### Folder additions to the service layer
+
+```
+server/
+  routes/
+    meetings.ts          -- CRUD + platform connect + status
+    meetingOutputs.ts    -- fetch outputs, approve compliance, send email
+  services/
+    meetingService.ts    -- orchestrates platform + processing
+    transcriptionService.ts  -- Azure Speech submission + polling
+    meetingAIService.ts  -- Claude API call + output parsing
+    consentService.ts    -- pre-meeting emails + opt-out tracking
+  jobs/
+    meetingProcessingJob.ts
+    transcriptionPollJob.ts
+  adapters/
+    teams.ts             -- Graph API: recording fetch, bot invite
+    zoom.ts              -- OAuth, webhook handling, recording download
+    inApp.ts             -- WebRTC chunk assembly
+```
+
+---
+
+### Build sequence for this feature
+
+Given your existing infrastructure is already being built, meeting intelligence slots in after the core CRM and carrier sync are stable:
+
+Weeks 11\u201312 cover platform OAuth setup (Teams Graph API app registration, Zoom OAuth app), the `meetings` table, and the basic scheduling/linking flow. Weeks 13\u201314 cover recording ingestion for all three platforms and the transcription pipeline. Weeks 15\u201316 cover the Claude AI processing pipeline, all six output types, and the compliance review workflow. Week 17 covers advisor coaching, plan trigger \u2192 stale flag integration, and the follow-up email send flow.
+
+Want me to go deeper on the Teams Graph API integration specifically, the Claude prompt design for the six AI outputs, or the in-app WebRTC recording implementation?

@@ -1,0 +1,5 @@
+# PlansTab needs to be replaced with:
+
+function PlansTab({ clientId }: { clientId: number }) {
+  return <FinancialPlanningContent clientId={clientId} />;
+}

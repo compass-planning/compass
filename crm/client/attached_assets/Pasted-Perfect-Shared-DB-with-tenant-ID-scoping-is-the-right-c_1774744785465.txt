@@ -1,0 +1,64 @@
+Perfect. Shared DB with tenant ID scoping is the right call for a subscription SaaS at this stage — simpler to operate, easier to scale. Let me put the full architecture plan together.
+
+---
+
+## Architecture plan — carrier file download API (Node.js / Multi-tenant SaaS)### System architectureClick any box to dig deeper into that layer.
+
+---
+
+### The multi-tenancy model
+
+With shared DB and `tenantId` on every row, the key discipline is that **every single query must be scoped by `tenantId`** — no exceptions. The easiest way to enforce this in Node.js is a middleware-injected repository layer where the `tenantId` is baked into the query builder context, so it's impossible for a route handler to accidentally fetch across tenant boundaries. You never trust the `tenantId` from the request body — you resolve it from the authenticated API key and attach it to the request object early in the middleware chain.
+
+Each tenant gets their own set of carrier credentials stored separately in your secrets store (AWS Secrets Manager or Azure Key Vault). Tenant A's Manulife advisor code has nothing to do with Tenant B's.
+
+---
+
+### The file request flow
+
+Because carrier APIs are slow and sometimes unavailable, file requests should be asynchronous. The happy path looks like this:
+
+1. Advisor calls `POST /v1/clients/{clientId}/files/request`, specifying file types and optionally a carrier
+2. API validates the advisor-client relationship and returns a `requestId` immediately (202 Accepted)
+3. A background job (BullMQ + Redis) picks up the request, calls the relevant carrier adapter, fetches the file
+4. File is stored in blob storage with a TTL (24–48 hrs is typical)
+5. Advisor polls `GET /v1/files/{requestId}` or receives a webhook when ready
+6. Response includes a short-lived signed URL — advisor downloads directly from storage, not through your server
+
+This keeps your API tier stateless, your response times fast, and your server bandwidth costs low.
+
+---
+
+### The carrier adapter pattern
+
+Each carrier gets its own adapter module implementing a common interface — something like:
+
+```js
+// ICarrierAdapter interface
+{
+  getClientFiles(tenantId, advisorCode, clientId, fileTypes) → Promise<FileResult[]>
+  downloadFile(fileRef) → Promise<Buffer>
+  healthCheck() → Promise<boolean>
+}
+```
+
+Manulife might use a REST API, Canada Life might use SFTP, iA Financial might have a portal scrape or a proprietary API — none of that leaks into your orchestration layer. You register adapters by carrier slug and the orchestrator just calls the right one.
+
+---
+
+### Core API endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/clients/{clientId}/files/request` | Initiate a file fetch (async) |
+| `GET` | `/v1/files/{requestId}` | Poll status / get download URL |
+| `GET` | `/v1/clients/{clientId}/files` | List available/cached files |
+| `GET` | `/v1/clients/{clientId}/files/audit` | Access log for this client |
+| `GET` | `/v1/carriers` | List carriers available to this tenant |
+| `POST` | `/v1/webhooks` | Register a webhook for completion events |
+
+---
+
+### Key decisions to make next
+
+The three things that will shape the next phase most are: (1) how you model the advisor-client relationship table and whether advisors belong to tenants or exist cross-tenant, (2) whether you go webhook-first or polling-first for async delivery, and (3) which carrier you're integrating first to validate the adapter pattern. Want to dig into the DB schema, the Node.js project structure, or start with a specific carrier integration?

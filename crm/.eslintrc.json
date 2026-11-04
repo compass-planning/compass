@@ -1,0 +1,88 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "ecmaFeatures": { "jsx": true }
+  },
+  "plugins": ["@typescript-eslint", "react-hooks"],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:react-hooks/recommended"
+  ],
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-non-null-assertion": "warn",
+    "@typescript-eslint/no-unused-expressions": ["error", { "allowShortCircuit": true, "allowTernary": true, "allowTaggedTemplates": true }],
+    "no-unused-expressions": "off",
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-debugger": "error",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "prefer-const": "error",
+    "no-var": "error",
+    "@typescript-eslint/no-require-imports": "warn",
+    "no-useless-catch": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["server/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-non-null-assertion": "off",
+        "no-console": "off",
+        "@typescript-eslint/no-require-imports": "off"
+      }
+    },
+    {
+      "files": ["shared/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off"
+      }
+    },
+    {
+      "files": [
+        "client/src/pages/FinancialPlanning.tsx",
+        "client/src/pages/MultiEntryTabs.tsx",
+        "client/src/pages/ClientDetail.tsx",
+        "client/src/pages/ExpensesTab.tsx",
+        "client/src/components/planning/RetirementProjectionForm.tsx",
+        "client/src/components/planning/planning/RetirementProjectionForm.tsx",
+        "client/src/components/planning/ScenarioMatrix.tsx",
+        "client/src/components/planning/PlanningInsightRail.tsx",
+        "client/src/components/planning/PlanningActionCenter.tsx",
+        "client/src/components/planning/GuardrailWorkspacePanel.tsx",
+        "client/src/components/planning/DrawdownTab.tsx",
+        "client/src/components/planning/planning/DrawdownTab.tsx",
+        "client/src/components/planning/FinancialPlanTab.tsx",
+        "client/src/components/planning/planning/FinancialPlanTab.tsx",
+        "client/src/components/planning/RetirementStrategist.tsx",
+        "client/src/components/planning/RetirementWorkspacePanel.tsx",
+        "client/src/components/planning/NetWorthPremiumMock.tsx",
+        "client/src/components/planning/planning/NetWorthPremiumMock.tsx",
+        "client/src/pages/GoalsTab.tsx",
+        "client/src/pages/MeltdownTab.tsx",
+        "client/src/pages/PensionTab.tsx"
+      ],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "warn",
+        "@typescript-eslint/no-non-null-assertion": "off",
+        "no-console": "off"
+      }
+    }
+  ],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2022": true
+  },
+  "ignorePatterns": [
+    "dist/",
+    "node_modules/",
+    "*.cjs",
+    "script/",
+    "migrations/"
+  ]
+}
