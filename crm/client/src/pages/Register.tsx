@@ -165,6 +165,9 @@ export default function Register() {
         <Button type="submit" className={authButtonClass} disabled={isRegistering} data-testid="button-submit-register">
           {isRegistering ? "Creating account..." : "Create Account"}
         </Button>
+        <p className="text-xs text-white/50 text-center" data-testid="text-legal-consent">
+          By creating an account you agree to our <a href="/legal/terms" className="underline hover:text-white">Terms of Service</a> and <a href="/legal/privacy" className="underline hover:text-white">Privacy Policy</a>.
+        </p>
       </form>
     </AuthShell>
   );

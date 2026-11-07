@@ -234,6 +234,9 @@ export default function Login() {
           >
             Create your account
           </Link>
+          <span className="block mt-3 text-xs text-white/50" data-testid="text-legal-links">
+            <a href="/legal/privacy" className="underline hover:text-white">Privacy Policy</a> · <a href="/legal/terms" className="underline hover:text-white">Terms of Service</a>
+          </span>
         </>
       }
     >
