@@ -3,6 +3,108 @@ import { logger } from "./logger";
 import { BASELINE_SQL } from "./baselineSql";
 
 /**
+ * Additive changes applied on every start (idempotent). Used for tables/columns added after the
+ * first-run baseline, so existing databases pick them up without a manual migration.
+ */
+const ADDITIVE_SQL = `
+CREATE TABLE IF NOT EXISTS scenario_comparisons (
+  id serial PRIMARY KEY NOT NULL,
+  client_id integer NOT NULL,
+  label text NOT NULL DEFAULT 'Scenario Comparison',
+  scenario_ids integer[] NOT NULL,
+  notes text,
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS saved_reports (
+  id serial PRIMARY KEY NOT NULL,
+  client_id integer NOT NULL,
+  plan_id integer,
+  advisor_id integer,
+  title text NOT NULL,
+  locale text NOT NULL DEFAULT 'en',
+  sections jsonb NOT NULL DEFAULT '[]'::jsonb,
+  html_content text,
+  generated_at timestamp NOT NULL DEFAULT now(),
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS projection_data jsonb;
+ALTER TABLE ai_recommendations ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE ai_recommendations ADD COLUMN IF NOT EXISTS run_id text;
+ALTER TABLE ai_recommendations ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE ai_recommendations ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS pension_type text;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_language text DEFAULT 'en' NOT NULL;
+ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS payoff_strategy text;
+ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE di_analyses ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE di_analyses ADD COLUMN IF NOT EXISTS data jsonb DEFAULT '{}'::jsonb NOT NULL;
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS child_dob text;
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS current_resp_balance numeric(15,2);
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS annual_contribution numeric(15,2);
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS target_amount numeric(15,2);
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS projected_balance numeric(15,2);
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS cesp_grant numeric(10,2);
+ALTER TABLE education_savings ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE estate_planning_notes ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE estate_planning_notes ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE financial_plans ADD COLUMN IF NOT EXISTS status text DEFAULT 'draft' NOT NULL;
+ALTER TABLE financial_plans ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS method text;
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS years_to_replace integer;
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS existing_disability numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS existing_critical_illness numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS recommended_life numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS recommended_disability numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS recommended_critical_illness numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS life_gap numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS disability_gap numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS critical_illness_gap numeric(15,2);
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE insurance_analyses ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE ltc_analyses ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE ltc_analyses ADD COLUMN IF NOT EXISTS data jsonb DEFAULT '{}'::jsonb NOT NULL;
+ALTER TABLE net_worth_entries ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE net_worth_entries ADD COLUMN IF NOT EXISTS owner text;
+ALTER TABLE net_worth_entries ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE net_worth_entries ADD COLUMN IF NOT EXISTS metadata jsonb;
+ALTER TABLE net_worth_entries ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE plan_action_items ADD COLUMN IF NOT EXISTS due_date text;
+ALTER TABLE plan_stale_flags ADD COLUMN IF NOT EXISTS reason text;
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS person text DEFAULT 'primary';
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS label text;
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS tfsa_contributions_made numeric(15,2);
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS cpp_monthly numeric(10,2);
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS oas_monthly numeric(10,2);
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS success_rate numeric(5,2);
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE retirement_projections ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+ALTER TABLE simulation_results ADD COLUMN IF NOT EXISTS median_outcome numeric(15,2);
+ALTER TABLE simulation_results ADD COLUMN IF NOT EXISTS percentile_10 numeric(15,2);
+ALTER TABLE simulation_results ADD COLUMN IF NOT EXISTS percentile_90 numeric(15,2);
+ALTER TABLE simulation_results ADD COLUMN IF NOT EXISTS paths jsonb;
+ALTER TABLE tax_planning_notes ADD COLUMN IF NOT EXISTS plan_id integer;
+ALTER TABLE tax_planning_notes ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+`;
+
+async function applyAdditive(client: { query: (q: string) => Promise<unknown> }): Promise<void> {
+  await client.query("BEGIN");
+  try {
+    await client.query(`SET LOCAL search_path TO ${CRM_SCHEMA}, public`);
+    await client.query(ADDITIVE_SQL);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  }
+}
+
+/**
  * Creates the "crm" Postgres schema and (on first run only) all CRM tables inside it.
  * Idempotent and safe with several machines starting at once (advisory lock).
  * Additive changes after the first run belong in `scripts/reconcile-schema.ts`.
@@ -28,6 +130,7 @@ export async function ensureCrmSchema(): Promise<void> {
         await client.query(`UPDATE ${CRM_SCHEMA}.companies SET module_pipeline = true, module_analytics = true`);
         logger.info("[crm] enabled Pipeline and Analytics modules for existing companies");
       }
+      await applyAdditive(client);
       return;
     }
     logger.info("[crm] first run — creating CRM tables in schema 'crm'");
@@ -36,6 +139,7 @@ export async function ensureCrmSchema(): Promise<void> {
       await client.query(`SET LOCAL search_path TO ${CRM_SCHEMA}, public`);
       await client.query(BASELINE_SQL);
       await client.query("COMMIT");
+      await applyAdditive(client);
       logger.info("[crm] schema created");
     } catch (err) {
       await client.query("ROLLBACK");

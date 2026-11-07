@@ -301,6 +301,9 @@ export const clients = pgTable("clients", {
   filingStatus:                text("filing_status"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  pensionType: text("pension_type"),
+  preferredLanguage: text("preferred_language").notNull().default("en"),
 });
 
 export const children = pgTable("children", {
@@ -499,6 +502,9 @@ export const financialPlans = pgTable("financial_plans", {
   riskTolerance: text("risk_tolerance"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  status: text("status").notNull().default("draft"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const netWorthEntries = pgTable("net_worth_entries", {
@@ -509,6 +515,12 @@ export const netWorthEntries = pgTable("net_worth_entries", {
   name: text("name").notNull(),
   value: numeric("value", { precision: 14, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  owner: text("owner"),
+  notes: text("notes"),
+  metadata: jsonb("metadata"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const retirementProjections = pgTable("retirement_projections", {
@@ -541,7 +553,18 @@ export const retirementProjections = pgTable("retirement_projections", {
   annualTfsaContribution: numeric("annual_tfsa_contribution", { precision: 14, scale: 2 }).default("0"),
   annualNonRegContribution: numeric("annual_non_reg_contribution", { precision: 14, scale: 2 }).default("0"),
   desiredIncomeSourceMix: jsonb("desired_income_source_mix"),
+  projectionData: jsonb("projection_data"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  person: text("person").default("primary"),
+  label: text("label"),
+  tfsaContributionsMade: decimal("tfsa_contributions_made", { precision: 15, scale: 2 }),
+  cppMonthly: decimal("cpp_monthly", { precision: 10, scale: 2 }),
+  oasMonthly: decimal("oas_monthly", { precision: 10, scale: 2 }),
+  successRate: decimal("success_rate", { precision: 5, scale: 2 }),
+  notes: text("notes"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insuranceAnalyses = pgTable("insurance_analyses", {
@@ -598,6 +621,20 @@ export const insuranceAnalyses = pgTable("insurance_analyses", {
   signatureDate: text("signature_date"),
   meetingNotes: text("meeting_notes"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  method: text("method"),
+  yearsToReplace: integer("years_to_replace"),
+  existingDisability: decimal("existing_disability", { precision: 15, scale: 2 }),
+  existingCriticalIllness: decimal("existing_critical_illness", { precision: 15, scale: 2 }),
+  recommendedLife: decimal("recommended_life", { precision: 15, scale: 2 }),
+  recommendedDisability: decimal("recommended_disability", { precision: 15, scale: 2 }),
+  recommendedCriticalIllness: decimal("recommended_critical_illness", { precision: 15, scale: 2 }),
+  lifeGap: decimal("life_gap", { precision: 15, scale: 2 }),
+  disabilityGap: decimal("disability_gap", { precision: 15, scale: 2 }),
+  criticalIllnessGap: decimal("critical_illness_gap", { precision: 15, scale: 2 }),
+  notes: text("notes"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const educationSavings = pgTable("education_savings", {
@@ -621,6 +658,15 @@ export const educationSavings = pgTable("education_savings", {
   bondAllocation: numeric("bond_allocation", { precision: 5, scale: 4 }).default("0.4"),
   projectionResults: jsonb("projection_results"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  childDob: text("child_dob"),
+  currentRespBalance: decimal("current_resp_balance", { precision: 15, scale: 2 }),
+  annualContribution: decimal("annual_contribution", { precision: 15, scale: 2 }),
+  targetAmount: decimal("target_amount", { precision: 15, scale: 2 }),
+  projectedBalance: decimal("projected_balance", { precision: 15, scale: 2 }),
+  cespGrant: decimal("cesp_grant", { precision: 10, scale: 2 }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const debtEntries = pgTable("debt_entries", {
@@ -635,6 +681,10 @@ export const debtEntries = pgTable("debt_entries", {
   priority: integer("priority").notNull().default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  payoffStrategy: text("payoff_strategy"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const taxPlanningNotes = pgTable("tax_planning_notes", {
@@ -646,6 +696,9 @@ export const taxPlanningNotes = pgTable("tax_planning_notes", {
   content: text("content").notNull(),
   actionRequired: boolean("action_required").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const estatePlanningNotes = pgTable("estate_planning_notes", {
@@ -656,6 +709,9 @@ export const estatePlanningNotes = pgTable("estate_planning_notes", {
   content: text("content").notNull(),
   documentReference: text("document_reference"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const estateAnalyses = pgTable("estate_analyses", {
@@ -744,6 +800,11 @@ export const aiRecommendations = pgTable("ai_recommendations", {
   priority: text("priority").notNull().default("medium"),
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  runId: text("run_id"),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const taxBrackets = pgTable("tax_brackets", {
@@ -836,6 +897,11 @@ export const planSnapshots = pgTable("plan_snapshots", {
   notes: text("notes"),
   createdBy: integer("created_by").references(() => staff.id),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  medianOutcome: decimal("median_outcome", { precision: 15, scale: 2 }),
+  percentile10: decimal("percentile_10", { precision: 15, scale: 2 }),
+  percentile90: decimal("percentile_90", { precision: 15, scale: 2 }),
+  paths: jsonb("paths"),
 });
 
 export const planStaleFlags = pgTable("plan_stale_flags", {
@@ -845,6 +911,8 @@ export const planStaleFlags = pgTable("plan_stale_flags", {
   triggeredBy: text("triggered_by").notNull(),
   resolvedAt: timestamp("resolved_at"),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  reason: text("reason"),
 });
 
 export const actionItemStatuses = ["pending", "in_progress", "completed", "dismissed"] as const;
@@ -863,6 +931,8 @@ export const planActionItems = pgTable("plan_action_items", {
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // ── ported from Compass Planning ──
+  dueDate: text("due_date"),
 });
 
 export const insertPlanAssumptionSchema = createInsertSchema(planAssumptions).omit({ id: true, createdAt: true, updatedAt: true });
@@ -1800,6 +1870,9 @@ export const ltcAnalyses = pgTable("ltc_analyses", {
   resultData:          jsonb("result_data"),
   createdAt:           timestamp("created_at").defaultNow().notNull(),
   updatedAt:           timestamp("updated_at").defaultNow().notNull(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  data: jsonb("data").notNull().default({}),
 });
 export type LtcAnalysis       = typeof ltcAnalyses.$inferSelect;
 export type InsertLtcAnalysis = typeof ltcAnalyses.$inferInsert;
@@ -1826,6 +1899,38 @@ export const diAnalyses = pgTable("di_analyses", {
   resultData:            jsonb("result_data"),
   createdAt:             timestamp("created_at").defaultNow().notNull(),
   updatedAt:             timestamp("updated_at").defaultNow().notNull(),
+  // ── ported from Compass Planning ──
+  planId: integer("plan_id"),
+  data: jsonb("data").notNull().default({}),
 });
 export type DiAnalysis       = typeof diAnalyses.$inferSelect;
 export type InsertDiAnalysis = typeof diAnalyses.$inferInsert;
+
+
+// ── Scenario Comparisons (ported from Compass Planning) ──────────────────────
+export const scenarioComparisons = pgTable("scenario_comparisons", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull(),
+  label: text("label").notNull().default("Scenario Comparison"),
+  scenarioIds: integer("scenario_ids").array().notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type ScenarioComparison = typeof scenarioComparisons.$inferSelect;
+
+// ── Saved Reports (ported from Compass Planning) ─────────────────────────────
+export const savedReports = pgTable("saved_reports", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull(),
+  planId: integer("plan_id"),
+  advisorId: integer("advisor_id"),
+  title: text("title").notNull(),
+  locale: text("locale").notNull().default("en"),
+  sections: jsonb("sections").notNull().default([]),
+  htmlContent: text("html_content"),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type SavedReport = typeof savedReports.$inferSelect;

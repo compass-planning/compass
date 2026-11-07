@@ -1,4 +1,4 @@
-import { getBenefitRate } from "./loader";
+import { getBenefitRate } from "./loader.js";
 
 export interface CppProjection {
   startAge: number;
@@ -10,7 +10,7 @@ export interface CppProjection {
 
 export function projectCpp(
   startAge: number,
-  maxMonthlyBenefit?: number,
+  maxMonthlyBenefit?: number
 ): CppProjection {
   const cppMax = maxMonthlyBenefit ?? getBenefitRate("cpp_max_monthly");
   const clampedAge = Math.max(60, Math.min(70, startAge));
@@ -54,18 +54,8 @@ export function cppTimingComparison(maxMonthlyBenefit?: number): {
   const at65 = projectCpp(65, maxMonthlyBenefit);
   const at70 = projectCpp(70, maxMonthlyBenefit);
 
-  const breakEven60vs65 = computeBreakEvenAge(
-    60,
-    at60.annualBenefit,
-    65,
-    at65.annualBenefit,
-  );
-  const breakEven65vs70 = computeBreakEvenAge(
-    65,
-    at65.annualBenefit,
-    70,
-    at70.annualBenefit,
-  );
+  const breakEven60vs65 = computeBreakEvenAge(60, at60.annualBenefit, 65, at65.annualBenefit);
+  const breakEven65vs70 = computeBreakEvenAge(65, at65.annualBenefit, 70, at70.annualBenefit);
 
   return { at60, at65, at70, breakEven60vs65, breakEven65vs70 };
 }
@@ -74,7 +64,7 @@ function computeBreakEvenAge(
   earlyAge: number,
   earlyAnnual: number,
   lateAge: number,
-  lateAnnual: number,
+  lateAnnual: number
 ): number {
   let earlyCumulative = 0;
   let lateCumulative = 0;
@@ -108,7 +98,7 @@ export function projectOas(
   startAge: number,
   totalIncome: number,
   yearsInCanada: number = 40,
-  maxMonthlyBenefit?: number,
+  maxMonthlyBenefit?: number
 ): OasProjection {
   const oasMax = maxMonthlyBenefit ?? getBenefitRate("oas_max_monthly");
   const clawbackThreshold = getBenefitRate("oas_clawback_threshold");
@@ -129,10 +119,7 @@ export function projectOas(
 
   let clawbackAmount = 0;
   if (totalIncome > clawbackThreshold) {
-    clawbackAmount = Math.min(
-      annualBenefit,
-      (totalIncome - clawbackThreshold) * clawbackRate,
-    );
+    clawbackAmount = Math.min(annualBenefit, (totalIncome - clawbackThreshold) * clawbackRate);
   }
 
   const netAnnualBenefit = annualBenefit - clawbackAmount;
@@ -150,7 +137,7 @@ export function projectOas(
 export function oasDeferralComparison(
   totalIncome: number,
   yearsInCanada: number = 40,
-  maxMonthlyBenefit?: number,
+  maxMonthlyBenefit?: number
 ): {
   at65: OasProjection;
   at66: OasProjection;
@@ -169,10 +156,7 @@ export function oasDeferralComparison(
   };
 }
 
-export function calculateOasClawback(
-  totalIncome: number,
-  oasAnnual: number,
-): number {
+export function calculateOasClawback(totalIncome: number, oasAnnual: number): number {
   const threshold = getBenefitRate("oas_clawback_threshold");
   const rate = getBenefitRate("oas_clawback_rate");
 

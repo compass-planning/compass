@@ -14,7 +14,9 @@
  *   }
  */
 
-export const translations = {
+import { planningExtra } from "./translations.planning";
+
+const baseTranslations = {
 
   // ────────────────────────────────────────────────────────────────────────────
   en: {
@@ -2980,6 +2982,18 @@ export const translations = {
   },
 
 } as const;
+
+function mergeMissing(base: any, extra: any): any {
+  if (extra === undefined) return base;
+  if (base === undefined) return extra;
+  if (typeof base !== "object" || base === null || typeof extra !== "object" || extra === null) return base;
+  const out: any = { ...base };
+  for (const k of Object.keys(extra)) out[k] = mergeMissing(base[k], extra[k]);
+  return out;
+}
+
+export const translations = mergeMissing(baseTranslations, planningExtra) as typeof baseTranslations &
+  typeof planningExtra;
 
 export type T = typeof translations.en;
 export type ClientLocale = "en" | "fr";

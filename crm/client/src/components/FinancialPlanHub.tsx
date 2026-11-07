@@ -5,15 +5,16 @@ import { HubShell } from "./insightled";
 import { FinancialPlanTab } from "./planning/FinancialPlanTab";
 import { FinancialPlanningContent } from "../pages/FinancialPlanning";
 import { useLanguage } from "@/contexts/LanguageContext";
-
+import { translations, type T } from "@/i18n/translations";
 const queryClient = new QueryClient();
 
 interface Props {
   clientId: number;
-  client?: Record<string, unknown>;
+  client?:  any;
+  t?: T ;
 }
 
-export function FinancialPlanHub({ clientId, client }: Props) {
+export function FinancialPlanHub({ clientId, client  , t = translations.en }: Props) {
   const [subtab, setSubtab] = useState<"summary" | "workflow">("summary");
   const { isFrench } = useLanguage();
 
@@ -21,28 +22,36 @@ export function FinancialPlanHub({ clientId, client }: Props) {
     <QueryClientProvider client={queryClient}>
       <HubShell
         icon={Sparkles}
-        title={isFrench ? "Plan financier" : "Financial Plan"}
+        title={ t.plan.title }
         subtitle={
           <>
-            <span>{isFrench ? "Sommaire du plan" : "Plan summary"}</span>
+            <span>{ t.plan.planSummaryDesc }</span>
             <span>•</span>
-            <span>{isFrench ? "Flux de travail complet" : "End-to-end planning workflow"}</span>
+            <span>{ t.plan.endToEndWorkflow }</span>
           </>
         }
         subtabs={[
-          { key: "summary",  label: isFrench ? "Sommaire du plan"   : "Plan Summary",      icon: FileSpreadsheet, badgeTone: "cyan"   },
-          { key: "workflow", label: isFrench ? "Flux de travail"     : "Detailed Workflow", icon: ClipboardList,   badgeTone: "purple" },
+          {
+            key: "summary",
+            label:  t.plan.planSummary ,
+            icon: FileSpreadsheet,
+            badgeTone: "cyan",
+          },
+          {
+            key: "workflow",
+            label:  t.plan.detailedWorkflow ,
+            icon: ClipboardList,
+            badgeTone: "purple",
+          },
         ]}
         activeSubtab={subtab}
         onSubtabChange={(k) => setSubtab(k as "summary" | "workflow")}
       >
         <div className={subtab === "summary" ? "p-6" : ""}>
           {subtab === "summary" && (
-            <FinancialPlanTab clientId={clientId} clientName={client?.firstName} />
+            <FinancialPlanTab  t={t} clientId={clientId} clientName={client?.firstName} />
           )}
-          {subtab === "workflow" && (
-            <FinancialPlanningContent initialClientId={clientId} />
-          )}
+          {subtab === "workflow" && <FinancialPlanningContent initialClientId={clientId} />}
         </div>
       </HubShell>
     </QueryClientProvider>

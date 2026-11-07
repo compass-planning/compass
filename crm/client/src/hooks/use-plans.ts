@@ -17,7 +17,10 @@ export function useClientPlans(clientId: number) {
     queryFn: async () => {
       const url = buildUrl(api.plans.list.path, { clientId });
       const res = await fetch(url, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch plans");
       return api.plans.list.responses[200].parse(await res.json());
@@ -41,16 +44,17 @@ export function useCreatePlan() {
       const url = buildUrl(api.plans.create.path, { clientId });
       const res = await fetch(url, {
         method: api.plans.create.method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to create plan");
       return api.plans.create.responses[201].parse(await res.json());
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: [api.plans.list.path, variables.clientId],
-      });
+      queryClient.invalidateQueries({ queryKey: [api.plans.list.path, variables.clientId] });
     },
   });
 }
@@ -58,13 +62,7 @@ export function useCreatePlan() {
 export function useUpdatePlan() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: Partial<InsertFinancialPlan>;
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertFinancialPlan> }) => {
       const res = await apiRequest("PUT", `/api/crm/plans/${id}`, data);
       return res.json();
     },
@@ -97,7 +95,10 @@ export function useNetWorthEntries(clientId: number) {
     queryKey: ["/api/crm/clients/:clientId/net-worth", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/clients/${clientId}/net-worth`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch net worth entries");
       return res.json();
@@ -116,11 +117,7 @@ export function useCreateNetWorthEntry() {
       clientId: number;
       data: { type: string; category: string; name: string; value: string };
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/clients/${clientId}/net-worth`,
-        data,
-      );
+      const res = await apiRequest("POST", `/api/crm/clients/${clientId}/net-worth`, data);
       return res.json();
     },
     onSuccess: (_: any, variables: any) => {
@@ -139,12 +136,7 @@ export function useUpdateNetWorthEntry(clientId: number) {
       data,
     }: {
       id: number;
-      data: Partial<{
-        type: string;
-        category: string;
-        name: string;
-        value: string;
-      }>;
+      data: Partial<{ type: string; category: string; name: string; value: string }>;
     }) => {
       const res = await apiRequest("PUT", `/api/crm/net-worth/${id}`, data);
       return res.json();
@@ -177,10 +169,12 @@ export function useRetirementProjections(clientId: number) {
   return useQuery({
     queryKey: ["/api/crm/clients/:clientId/retirement-projections", clientId],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/crm/clients/${clientId}/retirement-projections`,
-        { headers: { "Content-Type": "application/json" } },
-      );
+      const res = await fetch(`/api/crm/clients/${clientId}/retirement-projections`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
+      });
       if (!res.ok) throw new Error("Failed to fetch retirement projections");
       return res.json();
     },
@@ -201,16 +195,13 @@ export function useCreateRetirementProjection() {
       const res = await apiRequest(
         "POST",
         `/api/crm/clients/${clientId}/retirement-projections`,
-        data,
+        data
       );
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [
-          "/api/crm/clients/:clientId/retirement-projections",
-          variables.clientId,
-        ],
+        queryKey: ["/api/crm/clients/:clientId/retirement-projections", variables.clientId],
       });
     },
   });
@@ -237,7 +228,10 @@ export function useInsuranceAnalyses(clientId: number) {
     queryKey: ["/api/crm/clients/:clientId/insurance-analyses", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/clients/${clientId}/insurance-analyses`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch insurance analyses");
       return res.json();
@@ -256,19 +250,12 @@ export function useCreateInsuranceAnalysis() {
       clientId: number;
       data: Record<string, number | string>;
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/clients/${clientId}/insurance-analyses`,
-        data,
-      );
+      const res = await apiRequest("POST", `/api/crm/clients/${clientId}/insurance-analyses`, data);
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [
-          "/api/crm/clients/:clientId/insurance-analyses",
-          variables.clientId,
-        ],
+        queryKey: ["/api/crm/clients/:clientId/insurance-analyses", variables.clientId],
       });
     },
   });
@@ -277,26 +264,17 @@ export function useCreateInsuranceAnalysis() {
 export function useCreateInsuranceWorksheet() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      clientId,
-      data,
-    }: {
-      clientId: number;
-      data: Record<string, unknown>;
-    }) => {
+    mutationFn: async ({ clientId, data }: { clientId: number; data: Record<string, unknown> }) => {
       const res = await apiRequest(
         "POST",
         `/api/crm/clients/${clientId}/insurance-worksheet`,
-        data,
+        data
       );
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [
-          "/api/crm/clients/:clientId/insurance-analyses",
-          variables.clientId,
-        ],
+        queryKey: ["/api/crm/clients/:clientId/insurance-analyses", variables.clientId],
       });
     },
   });
@@ -323,7 +301,10 @@ export function useEducationSavings(clientId: number) {
     queryKey: ["/api/crm/clients/:clientId/education-savings", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/clients/${clientId}/education-savings`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch education savings");
       return res.json();
@@ -344,19 +325,12 @@ export function useCreateEducationSaving() {
         Record<string, unknown> &
         Record<string, unknown>;
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/clients/${clientId}/education-savings`,
-        data,
-      );
+      const res = await apiRequest("POST", `/api/crm/clients/${clientId}/education-savings`, data);
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [
-          "/api/crm/clients/:clientId/education-savings",
-          variables.clientId,
-        ],
+        queryKey: ["/api/crm/clients/:clientId/education-savings", variables.clientId],
       });
     },
   });
@@ -365,13 +339,7 @@ export function useCreateEducationSaving() {
 export function useUpdateEducationSaving(clientId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: Partial<InsertEducationSaving>;
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertEducationSaving> }) => {
       const res = await apiRequest("PUT", `/api/crm/education-savings/${id}`, data);
       return res.json();
     },
@@ -404,7 +372,10 @@ export function useDebtEntries(clientId: number) {
     queryKey: ["/api/crm/clients/:clientId/debt-entries", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/clients/${clientId}/debt-entries`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch debt entries");
       return res.json();
@@ -421,15 +392,9 @@ export function useCreateDebtEntry() {
       data,
     }: {
       clientId: number;
-      data: Omit<InsertDebtEntry, "clientId"> &
-        Record<string, unknown> &
-        Record<string, unknown>;
+      data: Omit<InsertDebtEntry, "clientId"> & Record<string, unknown> & Record<string, unknown>;
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/clients/${clientId}/debt-entries`,
-        data,
-      );
+      const res = await apiRequest("POST", `/api/crm/clients/${clientId}/debt-entries`, data);
       return res.json();
     },
     onSuccess: (_, variables) => {
@@ -443,13 +408,7 @@ export function useCreateDebtEntry() {
 export function useUpdateDebtEntry(clientId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: Partial<InsertDebtEntry>;
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertDebtEntry> }) => {
       const res = await apiRequest("PUT", `/api/crm/debt-entries/${id}`, data);
       return res.json();
     },
@@ -482,7 +441,10 @@ export function useTaxPlanningNotes(clientId: number) {
     queryKey: ["/api/crm/clients/:clientId/tax-planning-notes", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/clients/${clientId}/tax-planning-notes`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch tax planning notes");
       return res.json();
@@ -503,19 +465,12 @@ export function useCreateTaxPlanningNote() {
         Record<string, unknown> &
         Record<string, unknown>;
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/clients/${clientId}/tax-planning-notes`,
-        data,
-      );
+      const res = await apiRequest("POST", `/api/crm/clients/${clientId}/tax-planning-notes`, data);
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [
-          "/api/crm/clients/:clientId/tax-planning-notes",
-          variables.clientId,
-        ],
+        queryKey: ["/api/crm/clients/:clientId/tax-planning-notes", variables.clientId],
       });
     },
   });
@@ -524,18 +479,8 @@ export function useCreateTaxPlanningNote() {
 export function useUpdateTaxPlanningNote(clientId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: Partial<InsertTaxPlanningNote>;
-    }) => {
-      const res = await apiRequest(
-        "PUT",
-        `/api/crm/tax-planning-notes/${id}`,
-        data,
-      );
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertTaxPlanningNote> }) => {
+      const res = await apiRequest("PUT", `/api/crm/tax-planning-notes/${id}`, data);
       return res.json();
     },
     onSuccess: () => {
@@ -678,14 +623,8 @@ export interface IncomeSplitResult {
  */
 export function useTaxProjection(clientId: number) {
   return useMutation({
-    mutationFn: async (
-      input: Record<string, unknown>,
-    ): Promise<TaxProjectionResult> => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/tax/${clientId}/projection`,
-        input,
-      );
+    mutationFn: async (input: Record<string, unknown>): Promise<TaxProjectionResult> => {
+      const res = await apiRequest("POST", `/api/crm/tax/${clientId}/projection`, input);
       if (!res.ok) throw new Error("Failed to run tax projection");
       return res.json();
     },
@@ -698,14 +637,8 @@ export function useTaxProjection(clientId: number) {
  */
 export function useRrspRoom(clientId: number) {
   return useMutation({
-    mutationFn: async (
-      input: Record<string, unknown>,
-    ): Promise<RrspRoomResult> => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/tax/${clientId}/rrsp-room`,
-        input,
-      );
+    mutationFn: async (input: Record<string, unknown>): Promise<RrspRoomResult> => {
+      const res = await apiRequest("POST", `/api/crm/tax/${clientId}/rrsp-room`, input);
       if (!res.ok) throw new Error("Failed to calculate RRSP room");
       return res.json();
     },
@@ -718,14 +651,8 @@ export function useRrspRoom(clientId: number) {
  */
 export function useTfsaRoom(clientId: number) {
   return useMutation({
-    mutationFn: async (
-      input: Record<string, unknown>,
-    ): Promise<TfsaRoomResult> => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/tax/${clientId}/tfsa-room`,
-        input,
-      );
+    mutationFn: async (input: Record<string, unknown>): Promise<TfsaRoomResult> => {
+      const res = await apiRequest("POST", `/api/crm/tax/${clientId}/tfsa-room`, input);
       if (!res.ok) throw new Error("Failed to calculate TFSA room");
       return res.json();
     },
@@ -738,14 +665,8 @@ export function useTfsaRoom(clientId: number) {
  */
 export function useCapitalGains(clientId: number) {
   return useMutation({
-    mutationFn: async (
-      input: Record<string, unknown>,
-    ): Promise<CapitalGainsResult> => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/tax/${clientId}/capital-gains`,
-        input,
-      );
+    mutationFn: async (input: Record<string, unknown>): Promise<CapitalGainsResult> => {
+      const res = await apiRequest("POST", `/api/crm/tax/${clientId}/capital-gains`, input);
       if (!res.ok) throw new Error("Failed to analyze capital gains");
       return res.json();
     },
@@ -758,14 +679,8 @@ export function useCapitalGains(clientId: number) {
  */
 export function useIncomeSplit(clientId: number) {
   return useMutation({
-    mutationFn: async (
-      input: Record<string, unknown>,
-    ): Promise<IncomeSplitResult> => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/tax/${clientId}/income-splitting`,
-        input,
-      );
+    mutationFn: async (input: Record<string, unknown>): Promise<IncomeSplitResult> => {
+      const res = await apiRequest("POST", `/api/crm/tax/${clientId}/income-splitting`, input);
       if (!res.ok) throw new Error("Failed to analyze income splitting");
       return res.json();
     },
@@ -776,10 +691,12 @@ export function useEstatePlanningNotes(clientId: number) {
   return useQuery({
     queryKey: ["/api/crm/clients/:clientId/estate-planning-notes", clientId],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/crm/clients/${clientId}/estate-planning-notes`,
-        { headers: { "Content-Type": "application/json" } },
-      );
+      const res = await fetch(`/api/crm/clients/${clientId}/estate-planning-notes`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
+      });
       if (!res.ok) throw new Error("Failed to fetch estate planning notes");
       return res.json();
     },
@@ -802,16 +719,13 @@ export function useCreateEstatePlanningNote() {
       const res = await apiRequest(
         "POST",
         `/api/crm/clients/${clientId}/estate-planning-notes`,
-        data,
+        data
       );
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [
-          "/api/crm/clients/:clientId/estate-planning-notes",
-          variables.clientId,
-        ],
+        queryKey: ["/api/crm/clients/:clientId/estate-planning-notes", variables.clientId],
       });
     },
   });
@@ -820,18 +734,8 @@ export function useCreateEstatePlanningNote() {
 export function useUpdateEstatePlanningNote(clientId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: Partial<InsertEstatePlanningNote>;
-    }) => {
-      const res = await apiRequest(
-        "PUT",
-        `/api/crm/estate-planning-notes/${id}`,
-        data,
-      );
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertEstatePlanningNote> }) => {
+      const res = await apiRequest("PUT", `/api/crm/estate-planning-notes/${id}`, data);
       return res.json();
     },
     onSuccess: () => {
@@ -863,7 +767,10 @@ export function useAiRecommendations(clientId: number) {
     queryKey: ["/api/crm/clients/:clientId/ai-recommendations", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/clients/${clientId}/ai-recommendations`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch AI recommendations");
       return res.json();
@@ -878,7 +785,7 @@ export function useGenerateAiRecommendations() {
     mutationFn: async (clientId: number) => {
       const res = await apiRequest(
         "POST",
-        `/api/crm/clients/${clientId}/ai-recommendations/generate`,
+        `/api/crm/clients/${clientId}/ai-recommendations/generate`
       );
       return res.json();
     },
@@ -899,18 +806,8 @@ export function useGenerateAiRecommendations() {
 export function useUpdateAiRecommendation(clientId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: { status: string };
-    }) => {
-      const res = await apiRequest(
-        "PUT",
-        `/api/crm/ai-recommendations/${id}`,
-        data,
-      );
+    mutationFn: async ({ id, data }: { id: number; data: { status: string } }) => {
+      const res = await apiRequest("PUT", `/api/crm/ai-recommendations/${id}`, data);
       return res.json();
     },
     onSuccess: () => {
@@ -941,10 +838,12 @@ export function useFinancialPlanningOverview(clientId: number) {
   return useQuery({
     queryKey: ["/api/crm/clients/:clientId/financial-planning-overview", clientId],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/crm/clients/${clientId}/financial-planning-overview`,
-        { headers: { "Content-Type": "application/json" } },
-      );
+      const res = await fetch(`/api/crm/clients/${clientId}/financial-planning-overview`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
+      });
       if (!res.ok) throw new Error("Failed to fetch overview");
       return res.json();
     },
@@ -966,7 +865,10 @@ export function useAvailableReports(clientId: number) {
     queryKey: ["/api/crm/reports/:clientId/available", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/reports/${clientId}/available`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to check available reports");
       return res.json();
@@ -979,10 +881,12 @@ export function useFinancialPlanningReport(clientId: number | null) {
   return useQuery({
     queryKey: ["/api/crm/clients/:clientId/financial-planning-report", clientId],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/crm/clients/${clientId}/financial-planning-report`,
-        { headers: { "Content-Type": "application/json" } },
-      );
+      const res = await fetch(`/api/crm/clients/${clientId}/financial-planning-report`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
+      });
       if (!res.ok) throw new Error("Failed to fetch report");
       return res.json();
     },
@@ -1006,7 +910,10 @@ export function usePlanStaleFlags(planId: number | null) {
     queryKey: ["/api/crm/plans/:planId/stale-flags", planId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/plans/${planId}/stale-flags`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch stale flags");
       return res.json();
@@ -1021,7 +928,10 @@ export function useSimulationResults(planId: number | null) {
     queryKey: ["/api/crm/plans/:planId/simulation-results", planId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/plans/${planId}/simulation-results`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch simulation results");
       return res.json();
@@ -1035,7 +945,10 @@ export function useScenarioComparison(planId: number | null) {
     queryKey: ["/api/crm/plans/:planId/scenario-comparison", planId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/plans/${planId}/scenario-comparison`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch scenario comparison");
       return res.json();
@@ -1049,7 +962,10 @@ export function usePlanAssumptions(planId: number | null) {
     queryKey: ["/api/crm/plans/:planId/assumptions", planId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/plans/${planId}/assumptions`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch assumptions");
       return res.json();
@@ -1068,11 +984,7 @@ export function useUpsertAssumption() {
       planId: number;
       data: Record<string, string | number>;
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/plans/${planId}/assumptions`,
-        data,
-      );
+      const res = await apiRequest("POST", `/api/crm/plans/${planId}/assumptions`, data);
       return res.json();
     },
     onSuccess: (_, variables) => {
@@ -1093,16 +1005,11 @@ export function useSeedDefaults() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (planId: number) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/plans/${planId}/assumptions/seed-defaults`,
-      );
+      const res = await apiRequest("POST", `/api/crm/plans/${planId}/assumptions/seed-defaults`);
       return res.json();
     },
     onSuccess: (_, planId) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/crm/plans/:planId/assumptions", planId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/plans/:planId/assumptions", planId] });
     },
   });
 }
@@ -1119,11 +1026,10 @@ export function useRunSimulation() {
       modules?: string[];
       scenario?: string;
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/plans/${planId}/run-simulation`,
-        { modules, scenario },
-      );
+      const res = await apiRequest("POST", `/api/crm/plans/${planId}/run-simulation`, {
+        modules,
+        scenario,
+      });
       return res.json();
     },
     onSuccess: (_, variables) => {
@@ -1145,7 +1051,10 @@ export function usePlanActionItems(planId: number | null) {
     queryKey: ["/api/crm/plans/:planId/action-items", planId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/plans/${planId}/action-items`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch action items");
       return res.json();
@@ -1163,17 +1072,11 @@ export function useCreateActionItem(planId: number | null) {
       description: string;
       priority: string;
     }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/crm/plans/${planId}/action-items`,
-        data,
-      );
+      const res = await apiRequest("POST", `/api/crm/plans/${planId}/action-items`, data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/crm/plans/:planId/action-items", planId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/plans/:planId/action-items", planId] });
     },
   });
 }
@@ -1192,9 +1095,7 @@ export function useUpdateActionItem(planId: number | null) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/crm/plans/:planId/action-items", planId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/plans/:planId/action-items", planId] });
     },
   });
 }
@@ -1206,9 +1107,7 @@ export function useDeleteActionItem(planId: number | null) {
       await apiRequest("DELETE", `/api/crm/action-items/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/crm/plans/:planId/action-items", planId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/plans/:planId/action-items", planId] });
     },
   });
 }
@@ -1218,7 +1117,10 @@ export function usePlanSnapshots(planId: number | null) {
     queryKey: ["/api/crm/plans/:planId/snapshots", planId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/plans/${planId}/snapshots`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) throw new Error("Failed to fetch snapshots");
       return res.json();
@@ -1262,7 +1164,10 @@ export function useSnapshotComparison(planId: number | null) {
     queryKey: ["/api/crm/plans/:planId/snapshot-comparison", planId],
     queryFn: async () => {
       const res = await fetch(`/api/crm/plans/${planId}/snapshot-comparison`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("fp_token") ?? ""}`,
+          "Content-Type": "application/json",
+        },
       });
       if (!res.ok) return null;
       return res.json();

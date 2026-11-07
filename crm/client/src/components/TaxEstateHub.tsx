@@ -1,10 +1,11 @@
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useState } from "react";
-import { translations, type T } from "../i18n/translations";
+import { translations, type T } from "@/i18n/translations";
 import { Receipt, ScrollText, Scale } from "lucide-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HubShell } from "./insightled";
-import { TaxTab, EstateNotesTab } from "../pages/FinancialPlanning";
-import { UsTaxTab } from "../pages/UsTaxTab";
+import { HubShell } from "@/components/insightled";
+import { TaxTab, EstateNotesTab } from "@/pages/FinancialPlanning";
+import { UsTaxTab } from "@/pages/UsTaxTab";
 
 const queryClient = new QueryClient();
 
@@ -16,7 +17,15 @@ interface Props {
   t?: T;
 }
 
-export function TaxEstateHub({ clientId, client, person, onPersonChange, t = translations.en }: Props) {
+export function TaxEstateHub({
+  clientId,
+  client,
+  person,
+  onPersonChange,
+  t: tProp,
+}: Props) {
+  const { t: ctxT } = useLanguage();
+  const t = (tProp ?? ctxT) as T;
   const [subtab, setSubtab] = useState<"tax" | "estate">("tax");
   const hasSpouse = !!client?.spouseFirstName;
 
@@ -33,7 +42,7 @@ export function TaxEstateHub({ clientId, client, person, onPersonChange, t = tra
           </>
         }
         subtabs={[
-          { key: "tax",    label: t.taxEstate.tax,    icon: Receipt,    badgeTone: "amber"  },
+          { key: "tax", label: t.taxEstate.tax, icon: Receipt, badgeTone: "amber" },
           { key: "estate", label: t.taxEstate.estate, icon: ScrollText, badgeTone: "purple" },
         ]}
         activeSubtab={subtab}
@@ -51,16 +60,21 @@ export function TaxEstateHub({ clientId, client, person, onPersonChange, t = tra
         }
       >
         <div className="p-6">
-  {subtab === "tax" && client?.jurisdiction === "US" && (
-    <UsTaxTab clientId={clientId} client={client} />
-  )}
-  {subtab === "tax" && client?.jurisdiction !== "US" && (
-    <TaxTab clientId={clientId} client={client} person={person === "combined" ? "primary" : person} t={t} />
-  )}
-  {subtab === "estate" && (
-    <EstateNotesTab clientId={clientId} planId={null} client={client} />
-  )}
-</div>
+          {subtab === "tax" && client?.jurisdiction === "US" && (
+            <UsTaxTab clientId={clientId} client={client} />
+          )}
+          {subtab === "tax" && client?.jurisdiction !== "US" && (
+            <TaxTab
+              clientId={clientId}
+              client={client}
+              person={person === "combined" ? "primary" : person}
+              t={t}
+            />
+          )}
+          {subtab === "estate" && (
+            <EstateNotesTab clientId={clientId} planId={null} client={client} />
+          )}
+        </div>
       </HubShell>
     </QueryClientProvider>
   );

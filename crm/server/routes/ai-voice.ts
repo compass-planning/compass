@@ -8,6 +8,9 @@
  *   POST /api/ai/meeting-summary   — summarise meeting transcript
  *   POST /api/ai/voice-field       — parse a single spoken field value
  *   POST /api/ai/voice-fill        — parse speech into multiple structured fields
+ *   POST /api/ai/transcribe        — audio upload → transcript (on-server whisper)
+ *   POST /api/ai/intake-transcript — intake conversation → client profile
+ *   POST /api/ai/needs-analysis-transcript — conversation → needs-analysis fields
  */
 
 import { Router, type Response } from "express";
@@ -189,6 +192,147 @@ Rules:
   } catch (err) {
     console.error("voice-fill error:", err);
     res.status(500).json({ message: "Failed to parse voice input", fields: {} });
+  }
+});
+
+// ── POST /api/ai/transcribe ───────────────────────────────────────────────────
+// multipart/form-data with an "audio" part. Transcribed on-server via speechToText
+// (whisper.cpp by default, so audio stays in the container). Returns { transcript }.
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+
+function readBody(req: any, limit: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (d: Buffer) => {
+      size += d.length;
+      if (size > limit) { reject(new Error("too large")); req.destroy(); return; }
+      chunks.push(d);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+/** Minimal multipart parser: returns the first file part named `field`. */
+function extractMultipartFile(body: Buffer, contentType: string, field: string): { data: Buffer; mime: string } | null {
+  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
+  if (!m) return null;
+  const boundary = Buffer.from("--" + (m[1] || m[2]).trim());
+  let pos = body.indexOf(boundary);
+  while (pos !== -1) {
+    const next = body.indexOf(boundary, pos + boundary.length);
+    if (next === -1) break;
+    const part = body.subarray(pos + boundary.length + 2, next - 2); // skip CRLF after boundary and before next
+    const headEnd = part.indexOf("\r\n\r\n");
+    if (headEnd !== -1) {
+      const head = part.subarray(0, headEnd).toString("utf8");
+      if (new RegExp(`name="${field}"`, "i").test(head)) {
+        const mime = /content-type:\s*([^\r\n]+)/i.exec(head)?.[1]?.trim() || "audio/webm";
+        return { data: part.subarray(headEnd + 4), mime };
+      }
+    }
+    pos = next;
+  }
+  return null;
+}
+
+r.post("/transcribe", async (req: any, res: Response) => {
+  try {
+    const body = await readBody(req, MAX_AUDIO_BYTES);
+    const file = extractMultipartFile(body, String(req.headers["content-type"] || ""), "audio");
+    if (!file || !file.data.length) return res.status(400).json({ message: "audio file is required" });
+    const fmt = file.mime.includes("mp4") ? "mp4" : file.mime.includes("wav") ? "wav" : file.mime.includes("ogg") ? "ogg" : "webm";
+    const text = (await speechToText(file.data, fmt)).trim();
+    res.json({ transcript: text });
+  } catch (err: any) {
+    console.error("transcribe error:", err?.message);
+    res.status(err?.message === "too large" ? 413 : 500).json({ message: err?.message === "too large" ? "Audio file too large" : "Transcription failed" });
+  }
+});
+
+
+// ── POST /api/ai/intake-transcript ────────────────────────────────────────────
+r.post("/intake-transcript", async (req: any, res: Response) => {
+  const { transcript } = req.body as { transcript: string };
+  if (!transcript?.trim()) return res.status(400).json({ message: "transcript is required" });
+
+  try {
+
+    const message = await anthropic.messages.create({
+      model:      "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system: `You are a financial advisor assistant. Extract client profile information from an intake conversation.
+
+Return ONLY valid JSON — no markdown, no prose:
+{
+  "firstName": "", "lastName": "", "email": "", "phone": "",
+  "dateOfBirth": "", "province": "", "occupation": "", "employmentStatus": "",
+  "annualIncome": "", "retirementAge": null, "desiredRetirementIncome": "",
+  "pensionType": "", "spouseFirstName": "", "spouseLastName": "",
+  "spouseDateOfBirth": "", "spouseOccupation": "", "spouseAnnualIncome": "", "notes": ""
+}
+Rules:
+- Empty string for any field not mentioned
+- dateOfBirth: ISO "YYYY-MM-DD" or ""
+- province: two-letter code (ON, BC, AB, QC) or US state abbreviation
+- annualIncome / spouseAnnualIncome / desiredRetirementIncome: numeric string only e.g. "95000"
+- retirementAge: integer or null
+- employmentStatus: "employed"|"self-employed"|"retired"|"unemployed"|""
+- pensionType: "defined-benefit"|"defined-contribution"|"none"|""
+- notes: anything relevant that doesn't fit other fields`,
+      messages: [{ role: "user", content: `Intake transcript:\n\n${transcript}` }],
+    });
+
+    const raw   = (message.content[0] as any).text ?? "";
+    const clean = raw.replace(/```json|```/g, "").trim();
+    res.json(JSON.parse(clean));
+  } catch (err) {
+    console.error("intake-transcript error:", err);
+    res.status(500).json({ message: "Failed to extract client profile" });
+  }
+});
+
+// ── POST /api/ai/needs-analysis-transcript ────────────────────────────────────
+r.post("/needs-analysis-transcript", async (req: any, res: Response) => {
+  const { transcript } = req.body as { transcript: string };
+  if (!transcript?.trim()) return res.status(400).json({ message: "transcript is required" });
+
+  try {
+
+    const message = await anthropic.messages.create({
+      model:      "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system: `You are a Canadian financial advisor assistant. Extract insurance needs analysis data from a conversation.
+
+Return ONLY valid JSON — no markdown, no prose:
+{
+  "primaryName": "", "primaryAge": "", "primaryAnnualIncome": "",
+  "spouseName": "", "spouseAge": "", "spouseAnnualIncome": "", "familyMembers": "",
+  "mortgageBalance": "", "carLoans": "", "linesOfCredit": "",
+  "creditCards": "", "finalExpenses": "", "emergencyFund": "",
+  "educationFund": "", "legacyFundForChildren": "", "charitableBequest": "",
+  "primaryReplacementPct": "", "primaryCppSurvivorBenefit": "", "primaryTargetAge": "",
+  "spouseReplacementPct": "", "spouseCppSurvivorBenefit": "", "spouseTargetAge": "",
+  "primaryLiquidSavings": "", "primaryRrsps": "",
+  "spouseLiquidSavings": "", "spouseRrsps": ""
+}
+Rules:
+- All monetary values: numeric string only e.g. "450000" — no $ or commas
+- Age and familyMembers: numeric string e.g. "42"
+- Replacement pct: numeric string e.g. "70" (percent, no % sign)
+- CPP survivor benefit: monthly dollar amount as numeric string e.g. "700"
+- Empty string "" for any field not mentioned — never omit a key
+- Infer reasonable defaults only if explicitly calculable from other stated values`,
+      messages: [{ role: "user", content: `Needs analysis conversation:\n\n${transcript}` }],
+    });
+
+    const raw   = (message.content[0] as any).text ?? "";
+    const clean = raw.replace(/```json|```/g, "").trim();
+    res.json(JSON.parse(clean));
+  } catch (err) {
+    console.error("needs-analysis-transcript error:", err);
+    res.status(500).json({ message: "Failed to extract needs analysis data" });
   }
 });
 

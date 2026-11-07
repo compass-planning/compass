@@ -11,8 +11,8 @@ import {
   ssTaxableAmount,
   SS_BEND_POINT_1_2025,
   SS_BEND_POINT_2_2025,
-} from "../reference/usBenefitRates2025";
-import type { SsTimingAnalysis, SsTimingOption, SsSpouseAnalysis } from "../tax/usTypes";
+} from "../reference/usBenefitRates2025.js";
+import type { SsTimingAnalysis, SsTimingOption, SsSpouseAnalysis } from "../tax/usTypes.js";
 
 // ── Timing analysis (ages 62–70) ─────────────────────────────────────────────
 

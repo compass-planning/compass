@@ -1,13 +1,14 @@
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useEffect, useState } from "react";
-import { translations, type T } from "../i18n/translations";
+import { translations, type T } from "@/i18n/translations";
 import { Shield, FileHeart, Calendar, Heart, Briefcase } from "lucide-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HubShell } from "./insightled";
-import { PoliciesTab } from "../pages/PoliciesTab";
-import { LTCTab } from "./planning/LTCTab";
-import { DITab }  from "./planning/DITab";
-import { InsuranceTab as FnaWorksheetTab } from "../pages/FinancialPlanning";
-import { api } from "../lib/api";
+import { HubShell } from "@/components/insightled";
+import { PoliciesTab } from "@/pages/PoliciesTab";
+import { LTCTab } from "@/components/planning/LTCTab";
+import { DITab } from "@/components/planning/DITab";
+import { InsuranceTab as FnaWorksheetTab } from "@/pages/FinancialPlanning";
+import { api } from "@/lib/api";
 
 const queryClient = new QueryClient();
 
@@ -25,10 +26,10 @@ interface Props {
   client?: any;
   person: "primary" | "spouse" | "combined";
   onPersonChange: (p: "primary" | "spouse" | "combined") => void;
+  t?: T;
 }
 
-const fmt$ = (n: number) =>
-  "$" + n.toLocaleString("en-CA", { maximumFractionDigits: 0 });
+const fmt$ = (n: number) => "$" + n.toLocaleString("en-CA", { maximumFractionDigits: 0 });
 
 function annualPremium(p: Policy): number {
   const v = parseFloat(p.premium || "0");
@@ -36,21 +37,28 @@ function annualPremium(p: Policy): number {
   return v * (mult[p.premiumFrequency] ?? 12);
 }
 
-export function ProtectionHub({ clientId, client, person, onPersonChange, t = translations.en }: Props) {
+export function ProtectionHub({
+  clientId,
+  client,
+  person,
+  onPersonChange,
+  t: tProp,
+}: Props) {
+  const { t: ctxT } = useLanguage();
+  const t = (tProp ?? ctxT) as T;
   const [subtab, setSubtab] = useState<"coverage" | "gap" | "ltc" | "di">("coverage");
   const [policies, setPolicies] = useState<Policy[]>([]);
 
   useEffect(() => {
-    api.get<Policy[]>(`/api/crm/clients/${clientId}/policies`)
+    api
+      .get<Policy[]>(`/api/crm/clients/${clientId}/policies`)
       .then(setPolicies)
       .catch(() => setPolicies([]));
   }, [clientId]);
 
   const totalPremium = policies.reduce((s, p) => s + annualPremium(p), 0);
   const hasSpouse = !!client?.spouseFirstName;
-  const spouseLabel = hasSpouse
-    ? client.spouseFirstName
-    : null;
+  const spouseLabel = hasSpouse ? client.spouseFirstName : null;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -60,13 +68,15 @@ export function ProtectionHub({ clientId, client, person, onPersonChange, t = tr
         subtitle={
           <>
             <span className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5" /> {policies.length} active {policies.length === 1 ? "policy" : "policies"}
+              <Calendar className="w-3.5 h-3.5" /> {policies.length} active{" "}
+              {policies.length === 1 ? "policy" : "policies"}
             </span>
             <span>•</span>
-            <span>{t.insurance.subtitle} {fmt$(totalPremium)}</span>
+            <span>
+              {t.insurance.subtitle} {fmt$(totalPremium)}
+            </span>
           </>
         }
-        
         subtabs={[
           {
             key: "coverage",
@@ -105,18 +115,12 @@ export function ProtectionHub({ clientId, client, person, onPersonChange, t = tr
         }}
       >
         <div className="p-6">
-          {subtab === "coverage" && (
-            <PoliciesTab clientId={clientId} client={client} t={t} />
-          )}
+          {subtab === "coverage" && <PoliciesTab clientId={clientId} client={client} t={t} />}
           {subtab === "gap" && (
             <FnaWorksheetTab clientId={clientId} planId={null} client={client} />
           )}
-          {subtab === "ltc" && (
-            <LTCTab clientId={clientId} client={client} t={t} />
-          )}
-          {subtab === "di" && (
-            <DITab clientId={clientId} client={client} t={t} />
-          )}
+          {subtab === "ltc" && <LTCTab clientId={clientId} client={client} t={t} />}
+          {subtab === "di" && <DITab clientId={clientId} client={client} t={t} />}
         </div>
       </HubShell>
     </QueryClientProvider>

@@ -11,6 +11,8 @@ import { writeFile, unlink, readFile } from "fs/promises";
 import { randomUUID } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
+import { transcribeLocal, convertToWav as whisperConvertToWav } from "./whisperLocal";
+import { logger } from "../logger";
 
 export type AudioFormat = "wav" | "mp3" | "webm" | "mp4" | "ogg" | "unknown";
 

@@ -1,5 +1,4 @@
-import React from "react";
-import { useState } from "react";
+import React, { useState } from "react";
 import { translations, type T } from "../i18n/translations";
 import { PiggyBank, Building2, TrendingUp, TrendingDown, Calendar, Sparkles } from "lucide-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,8 +8,6 @@ import { ScenarioComparisonPanel } from "./planning/ScenarioComparisonPanel";
 import { PensionTab } from "../pages/PensionTab";
 import { MeltdownTab } from "../pages/MeltdownTab";
 import { RetirementStrategist } from "./planning/RetirementStrategist";
-
-
 const queryClient = new QueryClient();
 
 type Subtab = "projection" | "pension" | "meltdown" | "strategist";
@@ -23,12 +20,46 @@ interface Props {
   t?: T;
 }
 
-export function RetirementHub({ clientId, client, person, onPersonChange, t = translations.en }: Props) {
+export function RetirementHub({
+  clientId,
+  client,
+  person,
+  onPersonChange,
+  t = translations.en,
+}: Props) {
   const [comparing, setComparing] = React.useState(false);
   const [subtab, setSubtab] = useState<Subtab>("pension");
   const hasSpouse = !!client?.spouseFirstName;
 
-  return (
+   const isUs = (client?.jurisdiction ?? "CA") === "US";
+
+  const subtabs = [
+    { key: "pension", label: t.retirement.pension, icon: Building2, badgeTone: "purple" as const },
+    ...(!isUs
+      ? [
+          {
+            key: "meltdown",
+            label: t.retirement.rrspMeltdown,
+            icon: TrendingDown,
+            badge: "NEW",
+            badgeTone: "cyan" as const,
+          },
+        ]
+      : []),
+    {
+      key: "strategist",
+      label: t.retirement.strategist,
+      icon: Sparkles,
+      badge: "AI",
+      badgeTone: "purple" as const,
+    },
+    {
+      key: "projection",
+      label: t.retirement.projection,
+      icon: TrendingUp,
+      badgeTone: "cyan" as const,
+    },
+  ]; return (
     <QueryClientProvider client={queryClient}>
       <HubShell
         icon={PiggyBank}
@@ -39,14 +70,31 @@ export function RetirementHub({ clientId, client, person, onPersonChange, t = tr
               <Calendar className="w-3.5 h-3.5" /> Projection through age 95
             </span>
             <span>•</span>
-            <span>Pension, savings & meltdown strategy under one roof</span>
+            <span>Pension, savings &  {isUs ? "strategy" : "meltdown strategy"}  under one roof</span>
           </>
         }
         subtabs={[
-          { key: "pension",    label: t.retirement.pension,     icon: Building2,    badgeTone: "purple" },
-          { key: "meltdown",   label: t.retirement.rrspMeltdown, icon: TrendingDown, badge: "NEW", badgeTone: "cyan" },
-          { key: "strategist", label: t.retirement.strategist, icon: Sparkles, badge: "AI", badgeTone: "purple" },
-          { key: "projection", label: t.retirement.projection,  icon: TrendingUp,   badgeTone: "cyan" },
+          { key: "pension", label: t.retirement.pension, icon: Building2, badgeTone: "purple" },
+          {
+            key: "meltdown",
+            label: t.retirement.rrspMeltdown,
+            icon: TrendingDown,
+            badge: "NEW",
+            badgeTone: "cyan",
+          },
+          {
+            key: "strategist",
+            label: t.retirement.strategist,
+            icon: Sparkles,
+            badge: "AI",
+            badgeTone: "purple",
+          },
+          {
+            key: "projection",
+            label: t.retirement.projection,
+            icon: TrendingUp,
+            badgeTone: "cyan",
+          },
         ]}
         activeSubtab={subtab}
         onSubtabChange={(k) => setSubtab(k as Subtab)}
@@ -61,28 +109,38 @@ export function RetirementHub({ clientId, client, person, onPersonChange, t = tr
         <div className="p-6">
           {subtab === "projection" && (
             <>
-            <div className="flex justify-end px-6 pt-4">
-              <button
-                onClick={() => setComparing(true)}
-                className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-600"
-              >
-                ⇄ Compare Scenarios
-              </button>
-            </div>
-            <RetirementTab clientId={clientId} clientName={client?.firstName} person={person} t={t} />
-            {comparing && (
-              <ScenarioComparisonPanel
+              <div className="flex justify-end px-6 pt-4">
+                <button
+                  onClick={() => setComparing(true)}
+                  className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-600"
+                >
+                  ⇄ Compare Scenarios
+                </button>
+              </div>
+              <RetirementTab
                 clientId={clientId}
-                onClose={() => setComparing(false)}
+                clientName={client?.firstName}
+                person={person}
                 t={t}
               />
-            )}
-          </>
+              {comparing && (
+                <ScenarioComparisonPanel
+                  clientId={clientId}
+                  onClose={() => setComparing(false)}
+                  t={t}
+                />
+              )}
+            </>
           )}
           {subtab === "pension" && (
-            <PensionTab clientId={clientId} client={client} person={person === "combined" ? "primary" : person} t={t} />
+            <PensionTab
+              clientId={clientId}
+              client={client}
+              person={person === "combined" ? "primary" : person}
+              t={t}
+            />
           )}
-          {subtab === "meltdown" && (
+          {subtab === "meltdown" &&  !isUs && (
             <MeltdownTab clientId={clientId} client={client} person={person} />
           )}
           {subtab === "strategist" && (

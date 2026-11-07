@@ -18,11 +18,12 @@ import {
   debtEntries, clientPolicies, householdExpenses,
   taxPlanningNotes, estatePlanningNotes, aiRecommendations,
   planAssumptions, simulationResults, planSnapshots,
-  planStaleFlags, planActionItems, pensionPlans, incomeSources
+  planStaleFlags, planActionItems, pensionPlans, incomeSources,
+  savedReports, scenarioComparisons
 } from "@shared/schema";
 import { isAuthenticated } from "../auth";
 import { safe, ownsClient, ownsPlan } from "../fpUtils";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { runDrawdownStrategies, type DrawdownInput } from "../engine/drawdown";
 import { logger } from "../logger";
 import { validate, netWorthEntrySchema, retirementProjectionSchema, retirementPatchSchema, insuranceSchema, insurancePatchSchema, debtEntrySchema, debtPatchSchema, taxPlanningSchema, taxPatchSchema, educationSchema, educationPatchSchema, estateSchema, simulationSchema, aiReportSchema } from "../schemas";
@@ -1398,6 +1399,153 @@ r.delete("/saved-plans/:id", async (req: any, res: Response) => {
   if (!ex || !await ownsClient(ex.clientId, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
   await db.delete(aiRecommendations).where(eq(aiRecommendations.id, ex.id));
   res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────
+// SAVED REPORTS (ported from Compass Planning)
+// ─────────────────────────────────────────────────
+const staffOf = (req: any): number => (req as any).session?.staffId || 0;
+
+r.post("/clients/:clientId/saved-reports", async (req: any, res: Response) => {
+  const cid = +req.params.clientId;
+  try {
+    if (!await ownsClient(cid, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    const { title, locale = "en", sections = "all", htmlContent } = req.body;
+    if (!htmlContent) return res.status(400).json({ message: "htmlContent required" });
+    const [row] = await db.insert(savedReports).values({
+      clientId: cid, title: title || "Report", locale, sections,
+      htmlContent, advisorId: staffOf(req) || null,
+    }).returning({ id: savedReports.id, generatedAt: savedReports.generatedAt });
+    res.json(row);
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+r.get("/clients/:clientId/saved-reports", async (req: any, res: Response) => {
+  const cid = +req.params.clientId;
+  try {
+    if (!await ownsClient(cid, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    const rows = await db.select({
+      id: savedReports.id, title: savedReports.title, locale: savedReports.locale,
+      sections: savedReports.sections, generatedAt: savedReports.generatedAt,
+    }).from(savedReports).where(eq(savedReports.clientId, cid)).orderBy(savedReports.generatedAt);
+    res.json(rows);
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+r.get("/saved-reports/:id", async (req: any, res: Response) => {
+  try {
+    const [row] = await db.select().from(savedReports).where(eq(savedReports.id, +req.params.id));
+    if (!row || !await ownsClient(row.clientId, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    res.json(row);
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+r.delete("/saved-reports/:id", async (req: any, res: Response) => {
+  try {
+    const [row] = await db.select({ id: savedReports.id, clientId: savedReports.clientId })
+      .from(savedReports).where(eq(savedReports.id, +req.params.id));
+    if (!row || !await ownsClient(row.clientId, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    await db.delete(savedReports).where(eq(savedReports.id, row.id));
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+// ─────────────────────────────────────────────────
+// SCENARIO COMPARISONS
+// ─────────────────────────────────────────────────
+r.get("/clients/:id/scenario-comparisons", async (req: any, res: Response) => {
+  const cid = +req.params.id;
+  try {
+    if (!await ownsClient(cid, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    res.json(await db.select().from(scenarioComparisons).where(eq(scenarioComparisons.clientId, cid)));
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+r.post("/clients/:id/scenario-comparisons", async (req: any, res: Response) => {
+  const cid = +req.params.id;
+  try {
+    if (!await ownsClient(cid, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    const { label, scenarioIds, notes } = req.body;
+    if (!Array.isArray(scenarioIds) || scenarioIds.length < 2) {
+      return res.status(400).json({ message: "scenarioIds must be an array of 2–3 projection IDs" });
+    }
+    const [row] = await db.insert(scenarioComparisons).values({
+      clientId: cid, label: label || "Scenario Comparison",
+      scenarioIds: scenarioIds.map(Number), notes: notes || null,
+    }).returning();
+    res.status(201).json(row);
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+r.delete("/scenario-comparisons/:id", async (req: any, res: Response) => {
+  try {
+    const [row] = await db.select().from(scenarioComparisons).where(eq(scenarioComparisons.id, +req.params.id));
+    if (!row) return res.status(404).json({ message: "Not found" });
+    if (!await ownsClient(row.clientId, staffOf(req))) return res.status(403).json({ message: "Forbidden" });
+    await db.delete(scenarioComparisons).where(eq(scenarioComparisons.id, row.id));
+    res.json({ deleted: true });
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
+});
+
+// ─────────────────────────────────────────────────
+// CANADIAN RETIREMENT ENGINE — year-by-year projection
+// ─────────────────────────────────────────────────
+r.post("/clients/:id/retirement/:projId/project", async (req: any, res: Response) => {
+  const cid = +req.params.id;
+  const projId = +req.params.projId;
+  try {
+    if (!await ownsClient(cid, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    const [proj] = await db.select().from(retirementProjections)
+      .where(and(eq(retirementProjections.id, projId), eq(retirementProjections.clientId, cid)));
+    if (!proj) return res.status(404).json({ message: "Projection not found" });
+    const [client] = await db.select().from(clients).where(eq(clients.id, cid));
+    const p: any = proj;
+    const province = p.province || (client as any)?.province || "ON";
+    const { runCanadianProjection } = await import("../engine/canadianRetirementEngine");
+    const result = runCanadianProjection({
+      currentAge: Number(p.currentAge || 40),
+      retirementAge: Number(p.retirementAge || 65),
+      lifeExpectancy: Number(p.lifeExpectancy || 90),
+      province: province as any,
+      rrspBalance: Number(p.rrspBalance || 0),
+      tfsaBalance: Number(p.tfsaBalance || 0),
+      nonRegBalance: Number(p.nonRegBalance || 0),
+      nonRegTaxType: (p.nonRegTaxType || "mixed") as any,
+      nonRegAcb: Number(p.nonRegAcb || 0),
+      annualRrspContrib: Number(p.annualContribution || 0),
+      annualTfsaContrib: Number(p.annualTfsaContribution || 0),
+      desiredRetirementIncome: Number(p.desiredRetirementIncome || 0),
+      pensionAnnual: Number(p.pensionIncome || 0),
+      pensionStartAge: Number(p.pensionStartAge || 65),
+      pensionIndexed: Boolean(p.pensionIndexed),
+      bridgeBenefitAnnual: Number(p.bridgeBenefit || 0),
+      bridgeBenefitEndAge: Number(p.bridgeEndAge || 65),
+      cppMonthly: Number(p.cppMonthly || 0),
+      cppStartAge: Number(p.cppStartAge || 65),
+      oasMonthly: Number(p.oasMonthly || 0),
+      oasStartAge: Number(p.oasStartAge || 65),
+      expectedReturnPct: Number(p.expectedReturn || 6.5),
+      inflationPct: Number(p.inflationRate || 2.0),
+    });
+    await db.update(retirementProjections).set({ projectionData: result as any } as any)
+      .where(eq(retirementProjections.id, projId));
+    res.json(result);
+  } catch (e: any) {
+    logger.error("[canadian engine]", e.message);
+    res.status(500).json({ message: "Engine error", detail: e.message });
+  }
+});
+
+r.get("/clients/:id/retirement/:projId/projection-data", async (req: any, res: Response) => {
+  const cid = +req.params.id;
+  try {
+    if (!await ownsClient(cid, staffOf(req))) return res.status(404).json({ message: "Not found" });
+    const [proj] = await db.select().from(retirementProjections)
+      .where(and(eq(retirementProjections.id, +req.params.projId), eq(retirementProjections.clientId, cid)));
+    const data = (proj as any)?.projectionData;
+    if (!data) return res.status(404).json({ message: "No projection data — run the engine first" });
+    res.json(data);
+  } catch (e: any) { res.status(500).json({ message: e.message }); }
 });
 
 export { r as financialRouter };

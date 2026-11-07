@@ -6,25 +6,42 @@ import { SensitivityDisplay } from "./SensitivityDisplay";
 import { ActionItemsPanel } from "./ActionItemsPanel";
 import { SnapshotManager } from "./SnapshotManager";
 import { AssumptionEditor } from "./AssumptionEditor";
-import {
-  BarChart3,
-  Settings,
-  TrendingUp,
-  ListChecks,
-  Camera,
-  Activity,
-} from "lucide-react";
+import { BarChart3, Settings, TrendingUp, ListChecks, Camera, Activity, Shield } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
-
-type DashboardTab =
+import { GuardrailsPanel } from "@/components/planning/GuardrailsPanel";
+ interface SimBands {
+  p10: number[];
+  p25: number[];
+  p50: number[];
+  p75: number[];
+  p90: number[];
+  labels: number[];
+} type DashboardTab =
   | "scenarios"
   | "charts"
   | "sensitivity"
+  |  "guardrails"
   | "actions"
   | "snapshots"
-  | "assumptions";
+  | "assumptions" ;
 
-export function SimulationDashboard({ planId }: { planId: number }) {
+const dashTabs: Array<{ key: DashboardTab; label: string; icon: typeof BarChart3 }> = [
+  { key: "scenarios", label: "Scenarios", icon: BarChart3 },
+  { key: "charts", label: "Projections", icon: TrendingUp },
+  { key: "sensitivity", label: "Sensitivity", icon: Activity },
+  { key: "guardrails", label: "Guardrails", icon: Shield },
+  { key: "actions", label: "Action Items", icon: ListChecks },
+  { key: "snapshots", label: "Snapshots", icon: Camera },
+  { key: "assumptions", label: "Assumptions", icon: Settings },
+] ;
+
+export function SimulationDashboard({ planId  ,
+  retirementAge = 65,
+  currentAge = 45,
+  baseWithdrawal = 0, }: { planId: number  ;
+  retirementAge?: number;
+  currentAge?: number;
+  baseWithdrawal?: number; }) {
   const { isFrench: isFr } = useLanguage();
   const [activeTab, setActiveTab] = useState<DashboardTab>("scenarios");
   const { data: simResults = [] } = useSimulationResults(planId);
@@ -43,7 +60,20 @@ export function SimulationDashboard({ planId }: { planId: number }) {
   ];
 
   const baseResults = simResults.filter((r) => r.scenario === "Moderate");
-  const hasResults = simResults.length > 0;
+  const hasResults = simResults.length > 0 ;
+
+  // Get percentile bands from base results for guardrails
+  const baseResult = baseResults[0] ?? simResults[0];
+  const percentileBands: SimBands = {
+    p10: [],
+    p25: [],
+    p50: [],
+    p75: [],
+    p90: [],
+    labels: [],
+    ...(baseResult?.percentileBands ?? {}),
+  };
+  const simSuccessRate = Number(baseResult?.successRate ?? 0) ;
 
   return (
     <div className="space-y-6" data-testid="simulation-dashboard">
@@ -71,13 +101,18 @@ export function SimulationDashboard({ planId }: { planId: number }) {
         {activeTab === "scenarios" && <ScenarioComparison planId={planId} />}
         {activeTab === "charts" && (
           <PercentileChartGrid
-            results={
-              baseResults.length > 0 ? baseResults : simResults.slice(0, 4)
-            }
+            results={baseResults.length > 0 ? baseResults : simResults.slice(0, 4)}
           />
         )}
-        {activeTab === "sensitivity" && (
-          <SensitivityDisplay results={simResults} />
+        {activeTab === "sensitivity" && <SensitivityDisplay results={simResults} />}
+        {activeTab ===  "guardrails" && (
+          <GuardrailsPanel
+            percentileBands={percentileBands}
+            successRate={simSuccessRate}
+            baseWithdrawal={baseWithdrawal}
+            retirementAge={retirementAge}
+            currentAge={currentAge}
+          />
         )}
         {activeTab === "actions" && <ActionItemsPanel planId={planId} />}
         {activeTab === "snapshots" && <SnapshotManager planId={planId} />}
