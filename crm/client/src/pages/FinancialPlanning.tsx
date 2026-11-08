@@ -1385,7 +1385,7 @@ function RrspRoomPanel({ clientId, prefill, person = "primary", primaryLabel = "
     setSaving(true);
     try {
       const input: Record<string, unknown> = {};
-      for (const [k] of Object.entries(form)) {
+      for (const [k, v] of Object.entries(form)) {
         if (k === "label") continue;
         input[k] = Number(v);
       }
@@ -1559,7 +1559,7 @@ function TfsaRoomPanel({ clientId, prefill, person = "primary", primaryLabel = "
     setSaving(true);
     try {
       const input: Record<string, unknown> = {};
-      for (const [k] of Object.entries(form)) {
+      for (const [k, v] of Object.entries(form)) {
         if (k === "label") continue;
         input[k] = k === "portfolioReturn" ? Number(v) / 100 : Number(v);
       }
@@ -1828,7 +1828,7 @@ function TaxProjectionPanel({ clientId, prefillPrimary, prefillSpouse, person = 
     setSaving(true);
     try {
       const input: Record<string, unknown> = {};
-      for (const [k] of Object.entries(form)) {
+      for (const [k, v] of Object.entries(form)) {
         if (k === "label") continue;
         input[k] = isNaN(Number(v)) ? v : Number(v);
       }
@@ -2428,7 +2428,7 @@ function IncomeSplittingPanel({ clientId, prefill, person = "primary", primaryLa
     setSaving(true);
     try {
       const input: Record<string, unknown> = {};
-      for (const [k] of Object.entries(form)) {
+      for (const [k, v] of Object.entries(form)) {
         if (k === "label") continue;
         input[k] = isNaN(Number(v)) ? v : Number(v);
       }

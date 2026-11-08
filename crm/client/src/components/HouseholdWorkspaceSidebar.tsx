@@ -4,6 +4,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
  */
 
 import { useState } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Link } from "wouter";
 import {
   ArrowLeft, Target, PiggyBank, Shield, DollarSign,

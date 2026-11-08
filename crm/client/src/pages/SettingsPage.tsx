@@ -452,6 +452,7 @@ const credentialTypeLabels: Record<string, string> = {
 };
 
 function CarrierCredentialsSection() {
+  const { isFrench: isFr } = useLanguage();
   const { data: credentials = [], isLoading } = useCarrierCredentials();
   const { data: myCarriers = [] } = useQuery<{ id: number; carrierId: number; carrier: Carrier }[]>({ queryKey: ["/api/crm/my-carriers"] });
   const createCred = useCreateCarrierCredential();

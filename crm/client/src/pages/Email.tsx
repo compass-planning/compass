@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { AppLayout } from "@/components/AppLayout";
+import { ConnectEmailPrompt } from "@/components/EmailSetupModal";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, Send, Inbox, Star, Trash2, Reply, X, Paperclip, ChevronRight, ArrowLeft, RefreshCw, Edit3, AlertCircle, FileText, ShieldAlert, FolderOpen, ChevronDown, ChevronUp, Archive, Settings, MailX } from "lucide-react";
 import { format } from "date-fns";
@@ -95,19 +96,12 @@ export default function Email() {
             <p className="text-slate-500 mb-6" data-testid="text-email-setup-info">
               {isServiceError
                 ? "The email service is temporarily unavailable. Please try again later."
-                : "To use email within Compass CRM, your email account needs to be connected. Ask your administrator to set up the email integration for this workspace."}
+                : "To use email within Compass CRM, your email account needs to be connected. Connect your Microsoft or Google account below to get started."}
             </p>
             {!isServiceError && (
-              <div className="bg-muted/30 rounded-xl p-5 text-left space-y-3 mb-6">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Settings className="w-4 h-4" />
-                  Setup Instructions
-                </h3>
-                <ol className="text-sm text-slate-500 space-y-2 list-decimal list-inside">
-                  <li>Ask your administrator to connect the email integration for this workspace</li>
-                  <li>Ensure your staff email address matches your email account</li>
-                  <li>Once connected, your personal inbox will appear here automatically</li>
-                </ol>
+              <div className="mb-6 space-y-3">
+                <ConnectEmailPrompt testId="button-connect-email-email" />
+                <p className="text-xs text-slate-500">Works with Microsoft 365 / Outlook and Google / Gmail. You can also manage this later in Settings.</p>
               </div>
             )}
             {emailStatus?.staffEmail && (
@@ -129,6 +123,7 @@ export default function Email() {
 }
 
 function EmailClient({ connectedEmail, connectedDisplayName }: { connectedEmail?: string; connectedDisplayName?: string }) {
+  const { isFrench: isFr } = useLanguage();
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedFolderWellKnown, setSelectedFolderWellKnown] = useState<string | undefined>("inbox");
   const [selectedFolderName, setSelectedFolderName] = useState(isFr ? "Boîte de réception" : "Inbox");
@@ -281,7 +276,7 @@ function EmailClient({ connectedEmail, connectedDisplayName }: { connectedEmail?
   );
 }
 
-function MessageList({ folderId, folderWellKnown, onSelect, folderName, msg }: { folderId: string; folderName: string; folderWellKnown?: string; onSelect: (msg: EmailMessage) => void }) {
+function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { folderId: string; folderName: string; folderWellKnown?: string; onSelect: (msg: EmailMessage) => void }) {
   const queryClient = useQueryClient();
   const endpoint = `/api/crm/email/folders/${folderId}/messages`;
   const isSentFolder = folderWellKnown === "sentitems";
@@ -507,6 +502,7 @@ function ComposeView({ replyTo, onCancel, onSent }: {
   onCancel: () => void;
   onSent: () => void;
 }) {
+  const { isFrench: isFr } = useLanguage();
   const queryClient = useQueryClient();
   const [to, setTo] = useState(replyTo ? replyTo.from?.address || "" : "");
   const [cc, setCc] = useState("");

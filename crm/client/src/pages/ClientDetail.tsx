@@ -8,14 +8,15 @@ import { useClientMeetings, useCreateMeeting, useUploadMeetingAudio, useSummariz
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import type { TeamsMeeting } from "@/hooks/use-meetings";
 import { api } from "@shared/routes";
-import { useClientPlans, useCreatePlan, useUpdatePlan, useDeletePlan, useNetWorthEntries, useCreateNetWorthEntry, useUpdateNetWorthEntry, useDeleteNetWorthEntry, useRetirementProjections, useCreateRetirementProjection, useDeleteRetirementProjection, useInsuranceAnalyses, useCreateInsuranceAnalysis, useDeleteInsuranceAnalysis } from "@/hooks/use-plans";
+import { useClientPlans, useCreatePlan, useUpdatePlan, useDeletePlan, useNetWorthEntries, useCreateNetWorthEntry, useUpdateNetWorthEntry, useDeleteNetWorthEntry, useRetirementProjections, useCreateRetirementProjection, useDeleteRetirementProjection, useInsuranceAnalyses, useCreateInsuranceAnalysis, useDeleteInsuranceAnalysis, useEstatePlanningNotes } from "@/hooks/use-plans";
 import { useClientChildren, useCreateChild, useDeleteChild } from "@/hooks/use-children";
 import { useClientDocuments, useCreateDocument, useDeleteDocument } from "@/hooks/use-documents";
 import { useClientActivities, useCreateActivity, useDeleteActivity } from "@/hooks/use-activities";
 import { useClientLead } from "@/hooks/use-leads";
 import { useTasks } from "@/hooks/use-tasks";
 import { useClientCarrierFiles, useRequestCarrierFiles, downloadCarrierFile } from "@/hooks/use-carrier-files";
-import { Briefcase, Calendar, Target, Brain, Plus, Mic, Square, Loader2, FileText, CheckCircle2, Mail, Phone, Receipt, ScrollText, Smartphone, Building2, MapPin, Cake, Heart, Edit, X, Users, Baby, Trash2, ClipboardList, Activity, UserPlus, ExternalLink, Shield, Video, Download, AlertCircle, Table2, FolderDown, Bot, Eye, ShieldCheck, Send, ChevronDown, ChevronUp, Circle, Pause, Play } from "lucide-react";
+import { Briefcase, Calendar, Target, Brain, Plus, Mic, Square, Loader2, FileText, CheckCircle2, Mail, Phone, Receipt, ScrollText, Smartphone, Building2, MapPin, Cake, Heart, Edit, X, Users, Baby, Trash2, ClipboardList, Activity, UserPlus, ExternalLink, Shield, Video, Download, AlertCircle, Table2, FolderDown, Bot, Eye, ShieldCheck, Send, ChevronDown, ChevronUp, Circle, Pause, Play, CheckSquare } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useWindowManager } from "@/contexts/WindowManagerContext";
 import { format, differenceInYears } from "date-fns";
 import type { Client, Child, CarrierFileType } from "@shared/schema";
@@ -2068,7 +2069,7 @@ const recordingStatusConfig: Record<string, { label: string; color: string; icon
   error: { label: "Error", color: "text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-950/30", icon: AlertCircle },
 };
 
-function MeetingCard({ meeting: m, activeRecordingId, setActiveRecordingId, uploadAudio, summarize, companyConfig, id, title, date, transcript, summary, recordingStatus, recallBotId, meetingJoinUrl, recordingUrl, platform }: {
+function MeetingCard({ meeting: m, clientId, activeRecordingId, setActiveRecordingId, uploadAudio, summarize, companyConfig, id, title, date, transcript, summary, recordingStatus, recallBotId, meetingJoinUrl, recordingUrl, platform }: {
   meeting: { id: number; title: string; date: Date | string; transcript: string | null; summary: string | null; recordingStatus: string | null; recallBotId: string | null; meetingJoinUrl: string | null; recordingUrl: string | null; platform: string | null };
   clientId: number;
   activeRecordingId: number | null;

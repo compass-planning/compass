@@ -496,6 +496,10 @@ function _SortableHeader({ field, label, sortField, sortDir, onToggle }: { field
 }
 
 function _LeadRow({ lead, allStaff, onStageChange, onReassign, onClick, stage, advisorId }: { lead: Lead; allStaff: StaffMember[]; onStageChange: (stage: string) => void; onReassign: (advisorId: number) => void; onClick: () => void }) {
+  const { isFrench: isFr } = useLanguage();
+  const STAGE_CONFIG = getStageConfig(isFr);
+  const SOURCE_LABELS = getSourceLabels(isFr);
+  const PRODUCT_INTEREST_LABELS = getProductInterestLabels(isFr);
   const _advisor = lead.advisorId ? allStaff.find(s => s.id === lead.advisorId) : null;
   const advisors = allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
   const daysInPipeline = differenceInDays(new Date(), new Date(lead.createdAt!));
@@ -594,6 +598,10 @@ function _LeadRow({ lead, allStaff, onStageChange, onReassign, onClick, stage, a
 }
 
 function CreateLeadModal({ allStaff, onClose }: { allStaff: StaffMember[]; onClose: () => void }) {
+  const { isFrench: isFr } = useLanguage();
+  const STAGE_CONFIG = getStageConfig(isFr);
+  const SOURCE_LABELS = getSourceLabels(isFr);
+  const PRODUCT_INTEREST_LABELS = getProductInterestLabels(isFr);
   const createLead = useCreateLead();
   const advisors = allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
   const [formData, setFormData] = useState({
@@ -706,6 +714,10 @@ function CreateLeadModal({ allStaff, onClose }: { allStaff: StaffMember[]; onClo
 }
 
 export function LeadDetailContent({ leadId }: { leadId: number }) {
+  const { isFrench: isFr } = useLanguage();
+  const STAGE_CONFIG = getStageConfig(isFr);
+  const SOURCE_LABELS = getSourceLabels(isFr);
+  const PRODUCT_INTEREST_LABELS = getProductInterestLabels(isFr);
   const { data: lead } = useLead(leadId);
   const { data: allStaffData } = useStaffMembers();
   const allStaff = allStaffData ?? [];
@@ -853,6 +865,10 @@ export function LeadDetailContent({ leadId }: { leadId: number }) {
 }
 
 function LeadDetailModal({ lead, allStaff, onClose }: { lead: Lead; allStaff: StaffMember[]; onClose: () => void }) {
+  const { isFrench: isFr } = useLanguage();
+  const STAGE_CONFIG = getStageConfig(isFr);
+  const SOURCE_LABELS = getSourceLabels(isFr);
+  const PRODUCT_INTEREST_LABELS = getProductInterestLabels(isFr);
   const { data: freshLead } = useLead(lead.id);
   const current = freshLead || lead;
   const updateLead = useUpdateLead();

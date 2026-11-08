@@ -27,7 +27,7 @@ export function useClientMeetings(clientId: number) {
 export function useCreateMeeting() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ data }: { clientId: number; data: Omit<InsertMeeting, "clientId"> }) => {
+    mutationFn: async ({ clientId, data }: { clientId: number; data: Omit<InsertMeeting, "clientId"> }) => {
       const url = buildUrl(api.meetings.create.path, { clientId });
       const res = await fetch(url, {
         method: api.meetings.create.method,
@@ -102,6 +102,7 @@ export function useImportTeamsMeeting() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
+      clientId,
       teamsMeetingId,
       subject,
       startDateTime,

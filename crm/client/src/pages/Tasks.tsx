@@ -427,6 +427,9 @@ function _SortableHeader({ field, label, sortField, sortDir, onToggle }: { field
 }
 
 export function TaskDetailContent({ taskId }: { taskId: number }) {
+  const { isFrench: isFr } = useLanguage();
+  const PRIORITY_CONFIG = getPriorityConfig(isFr);
+  const STATUS_CONFIG = getStatusConfig(isFr);
   const { data: allTasks = [] } = useTasks();
   const { data: allStaff = [] } = useStaffMembers();
   const updateTask = useUpdateTask();
@@ -514,6 +517,9 @@ function _TaskRow({ task, allStaff, onToggleStatus, onEdit, clientName, leadName
   clientName?: string;
   leadName?: string;
 }) {
+  const { isFrench: isFr } = useLanguage();
+  const PRIORITY_CONFIG = getPriorityConfig(isFr);
+  const STATUS_CONFIG = getStatusConfig(isFr);
   const assignee = task.assignedToStaffId ? allStaff.find(s => s.id === task.assignedToStaffId) : null;
   const creator = allStaff.find(s => s.id === task.createdByStaffId);
   const priorityConfig = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium;
@@ -659,6 +665,9 @@ function TaskFormModal({ task, allStaff, onClose, currentStaffId }: {
   currentStaffId?: number;
   onClose: () => void;
 }) {
+  const { isFrench: isFr } = useLanguage();
+  const PRIORITY_CONFIG = getPriorityConfig(isFr);
+  const STATUS_CONFIG = getStatusConfig(isFr);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const { openWindow } = useWindowManager();

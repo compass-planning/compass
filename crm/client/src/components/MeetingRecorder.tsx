@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Mic, MicOff, Square, X, Download, Copy, Check, Loader2, FileText, Target, ListChecks, LayoutGrid, ShieldCheck, Mail, MessageSquare, PenLine } from "lucide-react";

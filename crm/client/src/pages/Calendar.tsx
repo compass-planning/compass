@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { AppLayout } from "@/components/AppLayout";
+import { ConnectEmailPrompt } from "@/components/EmailSetupModal";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/use-clients";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Clock, MapPin, Users, X, Trash2, Video, AlertCircle, RefreshCw, Settings, CalendarX2, Link2 } from "lucide-react";
@@ -88,16 +89,9 @@ export default function Calendar() {
                 : "To use the calendar within Compass CRM, your email account needs to be connected and must match your staff email address."}
             </p>
             {!isServiceError && (
-              <div className="bg-muted/30 rounded-xl p-5 text-left space-y-3 mb-6">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Settings className="w-4 h-4" />
-                  Setup Instructions
-                </h3>
-                <ol className="text-sm text-slate-500 space-y-2 list-decimal list-inside">
-                  <li>Ask your administrator to connect the email integration for this workspace</li>
-                  <li>Ensure your staff email address matches your email account</li>
-                  <li>Once connected, your calendar events will appear here automatically</li>
-                </ol>
+              <div className="mb-6 space-y-3">
+                <ConnectEmailPrompt testId="button-connect-email-calendar" />
+                <p className="text-xs text-slate-500">Works with Microsoft 365 / Outlook and Google / Gmail. You can also manage this later in Settings.</p>
               </div>
             )}
             {emailStatus?.staffEmail && (
@@ -133,7 +127,7 @@ function CalendarClient() {
   const fetchStart = subDays(queryStart, 1);
   const fetchEnd = addDays(queryEnd, 1);
 
-  const { data: events = [], _isLoading, error } = useQuery<CalendarEvent[]>({
+  const { data: events = [], isLoading: _isLoading, error } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/crm/calendar/events", fetchStart.toISOString(), fetchEnd.toISOString(), timezone],
     queryFn: async () => {
       const res = await fetch(
@@ -408,6 +402,7 @@ function EventDetailModal({ event, onClose, timezone }: { event: CalendarEvent; 
 }
 
 function CreateEventModal({ defaultDate, onClose, timezone }: { defaultDate: Date | null; onClose: () => void; timezone: string }) {
+  const { isFrench: isFr } = useLanguage();
   const queryClient = useQueryClient();
   const { data: clientsList } = useClients();
   const [subject, setSubject] = useState("");

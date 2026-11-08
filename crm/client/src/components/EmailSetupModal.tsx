@@ -31,7 +31,9 @@ export function EmailSetupModal({ onClose, onComplete }: { onClose: () => void; 
   const queryClient = useQueryClient();
   const { data: emailConfig } = useQuery<EmailConfig>({ queryKey: ["/api/crm/email/config"] });
 
-  const provider = emailConfig?.provider ?? "imap_smtp";
+  const [choice, setChoice] = useState<string | null>(null);
+  const detected = emailConfig?.provider ?? "imap_smtp";
+  const provider = choice ?? detected;
   const staffEmail = emailConfig?.staffEmail ?? "";
   const domain = staffEmail.split("@")[1] ?? "";
 
@@ -71,11 +73,37 @@ export function EmailSetupModal({ onClose, onComplete }: { onClose: () => void; 
               <div className="mb-4 p-3 rounded-xl bg-muted/50 text-sm">
                 <span className="text-muted-foreground">Your email: </span>
                 <span className="font-medium" data-testid="text-setup-email">{staffEmail}</span>
-                {provider !== "imap_smtp" && (
+                {provider !== "imap_smtp" && provider === detected && (
                   <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                     {providerLabels[provider]} detected
                   </span>
                 )}
+              </div>
+
+              <div className="mb-4" data-testid="email-provider-chooser">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Choose your email provider</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    ["outlook", "Microsoft 365 / Outlook"],
+                    ["gmail", "Google / Gmail"],
+                    ["imap_smtp", "Other (IMAP)"],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setChoice(key)}
+                      data-testid={`button-provider-${key}`}
+                      aria-pressed={provider === key}
+                      className={`px-2 py-2.5 rounded-xl border text-xs font-semibold transition-colors ${
+                        provider === key
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {provider === "outlook" && <OutlookSetup onComplete={onComplete} />}
@@ -499,6 +527,34 @@ export function EmailAccountSection() {
           onComplete={() => setShowSetup(false)}
         />
       )}
+    </>
+  );
+}
+
+
+/**
+ * Empty-state call to action used by the Email and Calendar pages when no account is connected.
+ * Lets any user (re)open the connection flow at any time, even if they skipped it at first login.
+ */
+export function ConnectEmailPrompt({ testId = "button-connect-email" }: { testId?: string }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const refresh = () => {
+    setOpen(false);
+    queryClient.invalidateQueries({ queryKey: ["/api/crm/email/status"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/crm/email/config"] });
+  };
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        data-testid={testId}
+        className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg hover:opacity-90 transition-opacity"
+      >
+        <Mail className="w-4 h-4" />
+        Connect your email
+      </button>
+      {open && <EmailSetupModal onClose={() => setOpen(false)} onComplete={refresh} />}
     </>
   );
 }
