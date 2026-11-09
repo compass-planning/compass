@@ -322,6 +322,32 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
   const isSentFolder = folderWellKnown === "sentitems";
   const isDraftFolder = folderWellKnown === "drafts";
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleteError, setDeleteError] = useState("");
+  useEffect(() => { setSelected(new Set()); setDeleteError(""); }, [folderId]);
+
+  const bulkDelete = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const failed: string[] = [];
+      for (let i = 0; i < ids.length; i += 5) {
+        const results = await Promise.all(ids.slice(i, i + 5).map(async id => {
+          try {
+            const res = await fetch(`/api/crm/email/messages/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "include" });
+            return res.ok ? null : id;
+          } catch { return id; }
+        }));
+        results.forEach(r => { if (r) failed.push(r); });
+      }
+      return failed;
+    },
+    onSuccess: (failed) => {
+      setSelected(new Set(failed));
+      setDeleteError(failed.length ? `${failed.length} message${failed.length > 1 ? "s" : ""} could not be deleted.` : "");
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/email/folders", folderId, "messages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/email/folders"] });
+    },
+  });
+
   const { data: messages, isLoading, error } = useQuery<EmailMessage[]>({
     queryKey: ["/api/crm/email/folders", folderId, "messages"],
     queryFn: async () => {
@@ -364,10 +390,39 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
 
       {!isLoading && messages && messages.length > 0 && (
         <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500" data-testid="header-message-columns">
-          <span className="flex-1 min-w-0 truncate">{isSentFolder ? "To / Subject" : "From / Subject"}</span>
-          <span className="flex-shrink-0 whitespace-nowrap" data-testid="header-received">{isSentFolder ? "Sent" : "Received"}</span>
+          <input
+            type="checkbox"
+            className="w-4 h-4 flex-shrink-0 cursor-pointer accent-primary"
+            aria-label="Select all messages"
+            checked={selected.size > 0 && messages.every(m => selected.has(m.id))}
+            ref={el => { if (el) el.indeterminate = selected.size > 0 && !messages.every(m => selected.has(m.id)); }}
+            onChange={e => setSelected(e.target.checked ? new Set(messages.map(m => m.id)) : new Set())}
+            data-testid="checkbox-select-all"
+          />
+          {selected.size > 0 ? (
+            <>
+              <span className="flex-1 min-w-0 truncate normal-case tracking-normal text-xs text-slate-700">{selected.size} selected</span>
+              <button
+                onClick={() => {
+                  const n = selected.size;
+                  if (confirm(`Delete ${n} message${n > 1 ? "s" : ""}?`)) bulkDelete.mutate(Array.from(selected));
+                }}
+                disabled={bulkDelete.isPending}
+                className="flex items-center gap-1 normal-case tracking-normal text-xs font-semibold text-destructive hover:bg-destructive/10 px-2 py-1 rounded disabled:opacity-50"
+                data-testid="button-delete-selected"
+              >
+                <Trash2 className="w-3.5 h-3.5" />{bulkDelete.isPending ? "Deleting..." : "Delete"}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="flex-1 min-w-0 truncate">{isSentFolder ? "To / Subject" : "From / Subject"}</span>
+              <span className="flex-shrink-0 whitespace-nowrap" data-testid="header-received">{isSentFolder ? "Sent" : "Received"}</span>
+            </>
+          )}
         </div>
       )}
+      {deleteError && <div className="px-4 py-2 text-xs text-destructive bg-destructive/5 border-b border-border" data-testid="text-delete-error">{deleteError}</div>}
 
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
@@ -391,13 +446,21 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
           </div>
         ) : (
           messages.map(msg => (
+            <div key={msg.id} className={`flex items-stretch border-b border-border/50 hover:bg-muted/30 transition-colors ${selected.has(msg.id) ? "bg-primary/5" : !msg.isRead && !isSentFolder ? "bg-primary/[0.02]" : ""}`}>
+              <label className="flex items-start pl-4 pr-1 py-4 cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 cursor-pointer accent-primary"
+                  aria-label={`Select message ${msg.subject || "(No Subject)"}`}
+                  checked={selected.has(msg.id)}
+                  onChange={e => setSelected(prev => { const n = new Set(prev); if (e.target.checked) n.add(msg.id); else n.delete(msg.id); return n; })}
+                  data-testid={`checkbox-message-${msg.id}`}
+                />
+              </label>
             <button
-              key={msg.id}
               onClick={() => onSelect(msg)}
               data-testid={`row-message-${msg.id}`}
-              className={`block w-full min-w-0 overflow-hidden text-left px-4 py-3 border-b border-border/50 hover:bg-muted/30 transition-colors ${
-                !msg.isRead && !isSentFolder ? "bg-primary/[0.02]" : ""
-              }`}
+              className="block flex-1 min-w-0 overflow-hidden text-left px-3 py-3"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-1 min-w-0">
@@ -426,6 +489,7 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
                 <p className="text-xs text-slate-500 truncate">{msg.bodyPreview}</p>
               </div>
             </button>
+            </div>
           ))
         )}
       </div>
