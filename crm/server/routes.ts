@@ -4,7 +4,7 @@ import _express from "express";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { storage } from "./storage";
+import { storage, ALL_COMPANIES } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./auth";
 import { registerOutlookRoutes } from "./outlook-routes";
 import { registerBotRoutes } from "./teams-bot/bot-routes";
@@ -229,7 +229,7 @@ async function seedHostSuperAdmin() {
 
 async function seedDatabase() {
   try {
-    const existingStaff = await storage.getStaffMembers();
+    const existingStaff = await storage.getStaffMembers(ALL_COMPANIES);
     if (existingStaff.length > 0) return;
     console.log("Seeding database...");
 

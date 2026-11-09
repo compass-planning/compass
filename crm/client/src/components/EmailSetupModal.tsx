@@ -544,8 +544,25 @@ export function ConnectEmailPrompt({ testId = "button-connect-email" }: { testId
     queryClient.invalidateQueries({ queryKey: ["/api/crm/email/status"] });
     queryClient.invalidateQueries({ queryKey: ["/api/crm/email/config"] });
   };
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const errCode = params?.get("error") || "";
+  const errDetail = params?.get("detail") || "";
+  const errMessages: Record<string, string> = {
+    microsoft_auth_failed: "Microsoft sign-in finished, but Compass couldn't save the connection. Please try again; if it keeps happening, contact support.",
+    gmail_auth_failed: "Google sign-in finished, but Compass couldn't save the connection. Please try again; if it keeps happening, contact support.",
+    oauth_denied: "The provider didn't allow the connection.",
+    invalid_state: "The sign-in session expired. Please try connecting again.",
+    not_authenticated: "You were signed out during the connection. Sign in and try again.",
+    no_code: "The provider didn't return a sign-in code. Please try again.",
+  };
   return (
     <>
+      {errCode && errMessages[errCode] && (
+        <div role="alert" data-testid="text-email-connect-error" className="mb-4 max-w-md mx-auto text-left text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
+          {errMessages[errCode]}
+          {errDetail && <span className="block mt-1 text-xs text-red-600/80 break-words">{errDetail}</span>}
+        </div>
+      )}
       <button
         onClick={() => setOpen(true)}
         data-testid={testId}

@@ -6,12 +6,13 @@ import { validatePassword } from "../auth/passwordPolicy";
 import { eq, and } from "drizzle-orm";
 import { storage } from "../storage";
 import { api } from "@shared/routes";
-import { staff, advisorAssignments, PLAN_DEFINITIONS } from "@shared/schema";
+import { staff, advisorAssignments, staffDocuments, staffChildren, PLAN_DEFINITIONS } from "@shared/schema";
 import { isAuthenticated } from "../auth";
 import { detectEmailProvider } from "../email/detect-provider";
 import {
   getStaffFromSession, getCompanyId, requireRole,
   redactStaffSensitiveFields, denyHostUsers,
+  verifyStaffInCompany, verifyStaffChildRecordOwnership,
 } from "./middleware";
 
 export const staffRouter = Router();
@@ -65,7 +66,7 @@ staffRouter.get("/api/staff/:id", isAuthenticated, async (req: any, res) => {
   const member = await storage.getStaffMember(Number(req.params.id));
   if (!member) return res.status(404).json({ message: "Staff member not found" });
   const companyId = await getCompanyId(req);
-  if (companyId && member.companyId && member.companyId !== companyId) {
+  if (!companyId || member.companyId !== companyId) {
     return res.status(404).json({ message: "Staff member not found" });
   }
   const caller = await getStaffFromSession(req);
@@ -164,7 +165,7 @@ staffRouter.put(
       const existing = await storage.getStaffMember(Number(req.params.id));
       if (!existing) return res.status(404).json({ message: "Staff member not found" });
       const callerCompanyId = req.staffMember?.companyId;
-      if (callerCompanyId && existing.companyId && existing.companyId !== callerCompanyId) {
+      if (!callerCompanyId || existing.companyId !== callerCompanyId) {
         return res.status(404).json({ message: "Staff member not found" });
       }
       const input = api.staff.update.input.parse(req.body);
@@ -218,7 +219,7 @@ staffRouter.delete(
     const existing = await storage.getStaffMember(Number(req.params.id));
     if (!existing) return res.status(404).json({ message: "Staff member not found" });
     const callerCompanyId = req.staffMember?.companyId;
-    if (callerCompanyId && existing.companyId && existing.companyId !== callerCompanyId) {
+    if (!callerCompanyId || existing.companyId !== callerCompanyId) {
       return res.status(404).json({ message: "Staff member not found" });
     }
     const protectedRoles = ["general_manager", "office_admin"];
@@ -245,7 +246,7 @@ staffRouter.post(
       const target = await storage.getStaffMember(targetId);
       if (!target) return res.status(404).json({ message: "Staff member not found" });
       const callerCompanyId = req.staffMember?.companyId;
-      if (callerCompanyId && target.companyId !== callerCompanyId) {
+      if (!callerCompanyId || target.companyId !== callerCompanyId) {
         return res.status(404).json({ message: "Staff member not found" });
       }
       const protectedRoles = ["general_manager", "office_admin"];
@@ -296,7 +297,7 @@ staffRouter.get("/api/staff/:advisorId/clients", isAuthenticated, async (req: an
   const companyId = await getCompanyId(req);
   const advisor = await storage.getStaffMember(advisorId);
   if (!advisor) return res.status(404).json({ message: "Staff member not found" });
-  if (companyId && advisor.companyId && advisor.companyId !== companyId) {
+  if (!companyId || advisor.companyId !== companyId) {
     return res.status(404).json({ message: "Staff member not found" });
   }
   const caller = await getStaffFromSession(req);
@@ -304,7 +305,7 @@ staffRouter.get("/api/staff/:advisorId/clients", isAuthenticated, async (req: an
   if (caller.role === "general_manager" || caller.role === "office_admin") {
     // full access
   } else if (caller.role === "sales_manager" || caller.role === "advisor_admin") {
-    const assignments = await storage.getAdvisorAssignments();
+    const assignments = await storage.getAdvisorAssignments(companyId);
     const isAssigned = assignments.some(a => a.adminId === caller.id && a.advisorId === advisorId);
     if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
   } else if (caller.role === "advisor") {
@@ -323,7 +324,7 @@ staffRouter.get("/api/staff/:advisorId/clients-by-type", isAuthenticated, async 
     const companyId = await getCompanyId(req);
     const advisor = await storage.getStaffMember(advisorId);
     if (!advisor) return res.status(404).json({ message: "Staff member not found" });
-    if (companyId && advisor.companyId && advisor.companyId !== companyId) {
+    if (!companyId || advisor.companyId !== companyId) {
       return res.status(404).json({ message: "Staff member not found" });
     }
     const caller = await getStaffFromSession(req);
@@ -331,7 +332,7 @@ staffRouter.get("/api/staff/:advisorId/clients-by-type", isAuthenticated, async 
     if (caller.role === "general_manager" || caller.role === "office_admin") {
       // full access
     } else if (caller.role === "sales_manager" || caller.role === "advisor_admin") {
-      const assignments = await storage.getAdvisorAssignments();
+      const assignments = await storage.getAdvisorAssignments(companyId);
       const isAssigned = assignments.some(a => a.adminId === caller.id && a.advisorId === advisorId);
       if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
     } else if (caller.role === "advisor") {
@@ -373,6 +374,7 @@ staffRouter.get("/api/staff/:advisorId/clients-by-type", isAuthenticated, async 
 // ── Staff documents ───────────────────────────────────────────────────────────
 
 staffRouter.get("/api/staff/:staffId/documents", isAuthenticated, async (req, res) => {
+  if (!(await verifyStaffInCompany(req, res, Number(req.params.staffId)))) return;
   const docs = await storage.getStaffDocuments(Number(req.params.staffId));
   res.json(docs);
 });
@@ -383,6 +385,7 @@ staffRouter.post(
   requireRole("general_manager", "office_admin"),
   async (req, res) => {
     try {
+      if (!(await verifyStaffInCompany(req, res, Number(req.params.staffId)))) return;
       const input = z
         .object({
           title: z.string().min(1),
@@ -414,6 +417,7 @@ staffRouter.delete(
   isAuthenticated,
   requireRole("general_manager", "office_admin"),
   async (req, res) => {
+    if (!(await verifyStaffChildRecordOwnership(req, res, staffDocuments, Number(req.params.id)))) return;
     await storage.deleteStaffDocument(Number(req.params.id));
     res.status(204).send();
   }
@@ -422,12 +426,14 @@ staffRouter.delete(
 // ── Staff children ────────────────────────────────────────────────────────────
 
 staffRouter.get("/api/staff/:staffId/children", isAuthenticated, async (req, res) => {
+  if (!(await verifyStaffInCompany(req, res, Number(req.params.staffId)))) return;
   const kids = await storage.getStaffChildren(Number(req.params.staffId));
   res.json(kids);
 });
 
 staffRouter.post("/api/staff/:staffId/children", isAuthenticated, async (req: any, res) => {
   try {
+    if (!(await verifyStaffInCompany(req, res, Number(req.params.staffId)))) return;
     const input = z
       .object({
         firstName: z.string().min(1),
@@ -451,6 +457,7 @@ staffRouter.post("/api/staff/:staffId/children", isAuthenticated, async (req: an
 
 staffRouter.put("/api/staff/:staffId/children/:childId", isAuthenticated, async (req: any, res) => {
   try {
+    if (!(await verifyStaffChildRecordOwnership(req, res, staffChildren, Number(req.params.childId)))) return;
     const input = z
       .object({
         firstName: z.string().min(1).optional(),
@@ -470,6 +477,7 @@ staffRouter.put("/api/staff/:staffId/children/:childId", isAuthenticated, async 
 });
 
 staffRouter.delete("/api/staff/:staffId/children/:childId", isAuthenticated, async (req, res) => {
+  if (!(await verifyStaffChildRecordOwnership(req, res, staffChildren, Number(req.params.childId)))) return;
   await storage.deleteStaffChild(Number(req.params.childId));
   res.status(204).send();
 });
@@ -477,6 +485,7 @@ staffRouter.delete("/api/staff/:staffId/children/:childId", isAuthenticated, asy
 // ── Advisors by admin ────────────────────────────────────────────────────────
 
 staffRouter.get("/api/staff/:adminId/advisors", isAuthenticated, async (req: any, res) => {
+  if (!(await verifyStaffInCompany(req, res, Number(req.params.adminId)))) return;
   const advisors = await storage.getAdvisorsByAdmin(Number(req.params.adminId));
   res.json(advisors);
 });
@@ -500,6 +509,12 @@ staffRouter.post(
         advisorId: z.coerce.number(),
       }).parse(req.body);
 
+      // Both people being linked must belong to the caller's company.
+      const callerCo = await getCompanyId(req);
+      const [mgrRow, advRow] = await Promise.all([storage.getStaffMember(input.adminId), storage.getStaffMember(input.advisorId)]);
+      if (!callerCo || mgrRow?.companyId !== callerCo || advRow?.companyId !== callerCo) {
+        return res.status(404).json({ message: "Staff member not found" });
+      }
       const manager = await storage.getStaffMember(input.adminId);
       if (!manager || !["advisor_admin", "sales_manager"].includes(manager.role)) {
         return res.status(400).json({ message: "Manager must be an Advisor Admin or Sales Manager", field: "adminId" });
@@ -525,6 +540,9 @@ staffRouter.delete(
   isAuthenticated,
   requireRole("general_manager", "office_admin"),
   async (req, res) => {
+    const [asg] = await db.select().from(advisorAssignments).where(eq(advisorAssignments.id, Number(req.params.id)));
+    if (!asg) return res.status(404).json({ message: "Not found" });
+    if (!(await verifyStaffInCompany(req, res, asg.adminId))) return;
     await storage.deleteAdvisorAssignment(Number(req.params.id));
     res.status(204).send();
   }

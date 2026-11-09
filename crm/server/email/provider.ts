@@ -8,12 +8,35 @@ export interface NormalizedFolder {
   wellKnownName?: string;
 }
 
+export interface AttachmentMeta {
+  /** Provider attachment id (Gmail attachmentId, Graph attachment id, IMAP part index). */
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  isInline?: boolean;
+}
+
+export interface OutgoingAttachment {
+  name: string;
+  contentType: string;
+  content: Buffer;
+}
+
+export interface ReplyExtras {
+  ccRecipients?: string[];
+  bccRecipients?: string[];
+  attachments?: OutgoingAttachment[];
+}
+
 export interface NormalizedMessage {
   id: string;
   subject: string;
   from: { name: string; address: string };
   toRecipients: { name: string; address: string }[];
   ccRecipients?: { name: string; address: string }[];
+  bccRecipients?: { name: string; address: string }[];
+  attachments?: AttachmentMeta[];
   receivedDateTime?: string;
   sentDateTime?: string;
   bodyPreview: string;
@@ -46,6 +69,8 @@ export interface SendMessageParams {
   body: string;
   toRecipients: string[];
   ccRecipients?: string[];
+  bccRecipients?: string[];
+  attachments?: OutgoingAttachment[];
 }
 
 export interface CreateEventParams {
@@ -76,6 +101,8 @@ export interface EmailProviderStatus {
   staffEmail?: string;
   provider?: string;
   reason?: "not_configured" | "service_error" | "no_provider";
+  /** Short diagnostic message for service_error, shown to the signed-in user. */
+  detail?: string;
 }
 
 export class CalendarNotAvailableError extends Error {
@@ -92,7 +119,12 @@ export interface EmailProvider {
   listMessages(folderId: string): Promise<NormalizedMessage[]>;
   getMessage(messageId: string): Promise<NormalizedMessage>;
   sendMessage(params: SendMessageParams): Promise<void>;
-  replyToMessage(messageId: string, comment: string): Promise<void>;
+  replyToMessage(messageId: string, comment: string, extras?: ReplyExtras): Promise<void>;
+  listAttachments(messageId: string): Promise<AttachmentMeta[]>;
+  getAttachment(
+    messageId: string,
+    attachmentId: string,
+  ): Promise<{ meta: AttachmentMeta; content: Buffer }>;
   markAsRead(messageId: string): Promise<void>;
   deleteMessage(messageId: string): Promise<void>;
   moveMessage(messageId: string, destinationId: string): Promise<void>;

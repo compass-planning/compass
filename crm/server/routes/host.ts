@@ -3,7 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
-import { storage } from "../storage";
+import { storage, ALL_COMPANIES } from "../storage";
 import { isAuthenticated } from "../auth";
 import { detectEmailProvider } from "../email/detect-provider";
 import {
@@ -118,7 +118,7 @@ hostRouter.get("/companies/:id/staff", isAuthenticated, requireHostRole("admin",
 
 hostRouter.get("/cases", isAuthenticated, requireHostRole("admin", "service"), async (req: any, res) => {
   const companyId = req.query.companyId ? Number(req.query.companyId) : undefined;
-  res.json(await storage.getServiceCases(companyId));
+  res.json(await storage.getServiceCases(companyId ?? ALL_COMPANIES));
 });
 
 hostRouter.get("/cases/:id", isAuthenticated, requireHostRole("admin", "service"), async (req, res) => {
@@ -129,7 +129,7 @@ hostRouter.get("/cases/:id", isAuthenticated, requireHostRole("admin", "service"
 
 hostRouter.post("/cases", isAuthenticated, requireHostRole("admin", "service"), async (req: any, res) => {
   try {
-    const existing = await storage.getServiceCases();
+    const existing = await storage.getServiceCases(ALL_COMPANIES);
     const caseNumber = `SVC-${String(existing.length + 1).padStart(5, "0")}`;
     const input = insertServiceCaseSchema.parse({ ...req.body, caseNumber, createdById: req.hostUser.id });
     res.status(201).json(await storage.createServiceCase(input));
@@ -175,12 +175,12 @@ hostRouter.post("/cases/:id/notes", isAuthenticated, requireHostRole("admin", "s
 
 hostRouter.get("/invoices", isAuthenticated, requireHostRole("admin", "accounting"), async (req: any, res) => {
   const companyId = req.query.companyId ? Number(req.query.companyId) : undefined;
-  res.json(await storage.getHostInvoices(companyId));
+  res.json(await storage.getHostInvoices(companyId ?? ALL_COMPANIES));
 });
 
 hostRouter.post("/invoices", isAuthenticated, requireHostRole("admin", "accounting"), async (req, res) => {
   try {
-    const existing = await storage.getHostInvoices();
+    const existing = await storage.getHostInvoices(ALL_COMPANIES);
     const invoiceNumber = `INV-${String(existing.length + 1).padStart(5, "0")}`;
     res.status(201).json(await storage.createHostInvoice(insertHostInvoiceSchema.parse({ ...req.body, invoiceNumber })));
   } catch (err) {

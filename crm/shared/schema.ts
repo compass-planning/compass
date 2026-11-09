@@ -1559,6 +1559,22 @@ export const emailConfigurations = pgTable("email_configurations", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const emailAuditLogs = pgTable("email_audit_logs", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id"),
+  actorType: text("actor_type").notNull(),
+  actorId: integer("actor_id").notNull(),
+  action: text("action").notNull(),
+  provider: text("provider"),
+  targetId: text("target_id"),
+  detail: jsonb("detail").notNull().default({}),
+  ip: text("ip"),
+  prevHash: text("prev_hash").notNull(),
+  hash: text("hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+export type EmailAuditLog = typeof emailAuditLogs.$inferSelect;
+
 export const insertEmailConfigurationSchema = createInsertSchema(emailConfigurations).omit({ id: true, createdAt: true });
 export type EmailConfiguration = typeof emailConfigurations.$inferSelect;
 export type InsertEmailConfiguration = z.infer<typeof insertEmailConfigurationSchema>;

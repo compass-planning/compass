@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import MailComposer from "nodemailer/lib/mail-composer";
 import type {
   EmailProvider,
   EmailProviderStatus,
@@ -8,6 +9,9 @@ import type {
   SendMessageParams,
   CreateEventParams,
   UpdateEventParams,
+  AttachmentMeta,
+  OutgoingAttachment,
+  ReplyExtras,
 } from "../provider";
 import { logger } from "../../logger";
 
@@ -170,59 +174,119 @@ export class GmailEmailProvider implements EmailProvider {
     return this.normalizeMessage(res.data);
   }
 
+  /** Builds an RFC 5322 message with MailComposer (encodes headers, blocks header injection). */
+  private async buildRaw(opts: {
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    html: string;
+    attachments?: OutgoingAttachment[];
+    inReplyTo?: string;
+    references?: string;
+  }): Promise<string> {
+    const clean = (list?: string[]) => (list || []).map((a) => a.replace(/[\r\n,<>"]/g, "").trim()).filter(Boolean);
+    const composer = new MailComposer({
+      to: clean(opts.to),
+      cc: clean(opts.cc),
+      bcc: clean(opts.bcc),
+      subject: opts.subject.replace(/[\r\n]+/g, " "),
+      html: opts.html,
+      inReplyTo: opts.inReplyTo,
+      references: opts.references,
+      attachments: (opts.attachments || []).map((a) => ({
+        filename: a.name,
+        content: a.content,
+        contentType: a.contentType,
+      })),
+    });
+    const node = composer.compile();
+    // Gmail's API reads recipients from the headers, so Bcc must stay in the raw message (Gmail strips it on delivery).
+    node.keepBcc = true;
+    const buf: Buffer = await new Promise((resolve, reject) =>
+      node.build((err: Error | null, msg: Buffer) => (err ? reject(err) : resolve(msg))),
+    );
+    return buf.toString("base64url");
+  }
+
   async sendMessage(params: SendMessageParams): Promise<void> {
     const gmail = this.getGmail();
-    const to = params.toRecipients.join(", ");
-    const cc = params.ccRecipients?.join(", ") || "";
-
-    const messageParts = [
-      `To: ${to}`,
-      cc ? `Cc: ${cc}` : "",
-      `Subject: ${params.subject}`,
-      "Content-Type: text/html; charset=utf-8",
-      "",
-      params.body,
-    ].filter(Boolean);
-
-    const raw = Buffer.from(messageParts.join("\r\n")).toString("base64url");
+    const raw = await this.buildRaw({
+      to: params.toRecipients,
+      cc: params.ccRecipients,
+      bcc: params.bccRecipients,
+      subject: params.subject,
+      html: params.body,
+      attachments: params.attachments,
+    });
     await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
   }
 
-  async replyToMessage(messageId: string, comment: string): Promise<void> {
+  async replyToMessage(messageId: string, comment: string, extras?: ReplyExtras): Promise<void> {
     const gmail = this.getGmail();
     const original = await gmail.users.messages.get({
       userId: "me",
       id: messageId,
       format: "metadata",
-      metadataHeaders: ["From", "Subject", "Message-ID"],
+      metadataHeaders: ["From", "Reply-To", "Subject", "Message-ID", "References"],
     });
-
     const headers = original.data.payload?.headers || [];
-    const fromHeader = headers.find((h) => h.name === "From")?.value || "";
-    const subjectHeader =
-      headers.find((h) => h.name === "Subject")?.value || "";
-    const messageIdHeader =
-      headers.find((h) => h.name === "Message-ID")?.value || "";
-
-    const subject = subjectHeader.startsWith("Re:")
-      ? subjectHeader
-      : `Re: ${subjectHeader}`;
-
-    const messageParts = [
-      `To: ${fromHeader}`,
-      `Subject: ${subject}`,
-      `In-Reply-To: ${messageIdHeader}`,
-      `References: ${messageIdHeader}`,
-      "Content-Type: text/html; charset=utf-8",
-      "",
-      comment,
-    ];
-
-    const raw = Buffer.from(messageParts.join("\r\n")).toString("base64url");
+    const h = (n: string) => headers.find((x) => x.name?.toLowerCase() === n.toLowerCase())?.value || "";
+    const replyTo = this.parseEmailAddress(h("Reply-To") || h("From")).address;
+    const subjectHeader = h("Subject");
+    const subject = /^re:/i.test(subjectHeader) ? subjectHeader : `Re: ${subjectHeader}`;
+    const msgId = h("Message-ID");
+    const refs = [h("References"), msgId].filter(Boolean).join(" ");
+    const raw = await this.buildRaw({
+      to: [replyTo],
+      cc: extras?.ccRecipients,
+      bcc: extras?.bccRecipients,
+      subject,
+      html: comment,
+      attachments: extras?.attachments,
+      inReplyTo: msgId || undefined,
+      references: refs || undefined,
+    });
     await gmail.users.messages.send({
       userId: "me",
       requestBody: { raw, threadId: original.data.threadId || undefined },
     });
+  }
+
+  private collectAttachmentParts(part: Record<string, unknown> | undefined, out: AttachmentMeta[]): void {
+    if (!part) return;
+    const body = part.body as { attachmentId?: string; size?: number } | undefined;
+    const filename = part.filename as string | undefined;
+    if (filename && body?.attachmentId) {
+      const headers = (part.headers as Array<{ name?: string; value?: string }> | undefined) || [];
+      const disp = headers.find((x) => x.name?.toLowerCase() === "content-disposition")?.value || "";
+      out.push({
+        id: body.attachmentId,
+        name: filename,
+        contentType: (part.mimeType as string) || "application/octet-stream",
+        size: body.size || 0,
+        isInline: /^inline/i.test(disp),
+      });
+    }
+    for (const child of (part.parts as Array<Record<string, unknown>> | undefined) || []) {
+      this.collectAttachmentParts(child, out);
+    }
+  }
+
+  async listAttachments(messageId: string): Promise<AttachmentMeta[]> {
+    const gmail = this.getGmail();
+    const res = await gmail.users.messages.get({ userId: "me", id: messageId, format: "full" });
+    const out: AttachmentMeta[] = [];
+    this.collectAttachmentParts(res.data.payload as Record<string, unknown>, out);
+    return out;
+  }
+
+  async getAttachment(messageId: string, attachmentId: string): Promise<{ meta: AttachmentMeta; content: Buffer }> {
+    const gmail = this.getGmail();
+    const meta = (await this.listAttachments(messageId)).find((a) => a.id === attachmentId);
+    if (!meta) throw new Error("Attachment not found");
+    const res = await gmail.users.messages.attachments.get({ userId: "me", messageId, id: attachmentId });
+    return { meta, content: Buffer.from(res.data.data || "", "base64url") };
   }
 
   async markAsRead(messageId: string): Promise<void> {
@@ -440,6 +504,7 @@ export class GmailEmailProvider implements EmailProvider {
     const from = this.parseEmailAddress(this.getHeader(headers, "From"));
     const to = this.parseEmailAddresses(this.getHeader(headers, "To"));
     const cc = this.parseEmailAddresses(this.getHeader(headers, "Cc"));
+    const bcc = this.parseEmailAddresses(this.getHeader(headers, "Bcc"));
     const dateStr = this.getHeader(headers, "Date");
     const isUnread = labelIds?.includes("UNREAD") ?? false;
     const isDraft = labelIds?.includes("DRAFT") ?? false;
@@ -450,6 +515,7 @@ export class GmailEmailProvider implements EmailProvider {
       from,
       toRecipients: to,
       ccRecipients: cc.length > 0 ? cc : undefined,
+      bccRecipients: bcc.length > 0 ? bcc : undefined,
       receivedDateTime: dateStr ? new Date(dateStr).toISOString() : undefined,
       sentDateTime: dateStr ? new Date(dateStr).toISOString() : undefined,
       bodyPreview: (msg.snippet as string) || "",
@@ -566,4 +632,14 @@ export async function exchangeGmailCode(code: string): Promise<GmailTokens> {
     refreshToken: tokens.refresh_token,
     expiresAt: tokens.expiry_date || undefined,
   };
+}
+
+/** Revokes a Google OAuth token (refresh or access). Best-effort; callers ignore failures. */
+export async function revokeGoogleToken(token?: string): Promise<void> {
+  if (!token) return;
+  await fetch("https://oauth2.googleapis.com/revoke", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ token }).toString(),
+  });
 }

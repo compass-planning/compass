@@ -8,6 +8,9 @@ import type {
   SendMessageParams,
   CreateEventParams,
   UpdateEventParams,
+  AttachmentMeta,
+  OutgoingAttachment,
+  ReplyExtras,
 } from "../provider";
 import { logger } from "../../logger";
 
@@ -121,10 +124,12 @@ export class OutlookEmailProvider implements EmailProvider {
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
+      console.error("[email] Outlook status check failed:", message);
       return {
         connected: false,
         staffEmail: staffEmail.toLowerCase(),
         provider: "outlook",
+        detail: message.slice(0, 200),
         reason: message.includes("token refresh failed") ? "not_configured" : "service_error",
       };
     }
@@ -199,9 +204,53 @@ export class OutlookEmailProvider implements EmailProvider {
     const client = await this.getClient();
     const message = await client
       .api(`/me/messages/${messageId}`)
-      .select("id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,isRead,hasAttachments,importance")
+      .select("id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,body,isRead,hasAttachments,importance")
       .get();
     return this.normalizeMessage(message);
+  }
+
+  private static readonly SMALL_ATTACHMENT_LIMIT = 3 * 1024 * 1024; // Graph inline limit
+
+  private static recipients(list?: string[]) {
+    return (list || []).map((address) => ({ emailAddress: { address } }));
+  }
+
+  private static fileAttachment(a: OutgoingAttachment) {
+    return {
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.name,
+      contentType: a.contentType,
+      contentBytes: a.content.toString("base64"),
+    };
+  }
+
+  /** Adds attachments to a draft: small ones inline, larger ones through an upload session. */
+  private async attachToDraft(draftId: string, attachments: OutgoingAttachment[]): Promise<void> {
+    const client = await this.getClient();
+    for (const a of attachments) {
+      if (a.content.length <= OutlookEmailProvider.SMALL_ATTACHMENT_LIMIT) {
+        await client.api(`/me/messages/${draftId}/attachments`).post(OutlookEmailProvider.fileAttachment(a));
+        continue;
+      }
+      const session = await client.api(`/me/messages/${draftId}/attachments/createUploadSession`).post({
+        AttachmentItem: { attachmentType: "file", name: a.name, size: a.content.length, contentType: a.contentType },
+      });
+      const CHUNK = 4 * 1024 * 1024;
+      for (let start = 0; start < a.content.length; start += CHUNK) {
+        const end = Math.min(start + CHUNK, a.content.length);
+        const res = await fetch(session.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Length": String(end - start),
+            "Content-Range": `bytes ${start}-${end - 1}/${a.content.length}`,
+          },
+          body: a.content.subarray(start, end),
+        });
+        if (!res.ok && res.status !== 201 && res.status !== 200) {
+          throw new Error(`Attachment upload failed (${res.status})`);
+        }
+      }
+    }
   }
 
   async sendMessage(params: SendMessageParams): Promise<void> {
@@ -209,19 +258,86 @@ export class OutlookEmailProvider implements EmailProvider {
     const message = {
       subject: params.subject,
       body: { contentType: "HTML", content: params.body },
-      toRecipients: params.toRecipients.map((email) => ({
-        emailAddress: { address: email },
-      })),
-      ccRecipients: (params.ccRecipients || []).map((email) => ({
-        emailAddress: { address: email },
-      })),
+      toRecipients: OutlookEmailProvider.recipients(params.toRecipients),
+      ccRecipients: OutlookEmailProvider.recipients(params.ccRecipients),
+      bccRecipients: OutlookEmailProvider.recipients(params.bccRecipients),
     };
-    await client.api("/me/sendMail").post({ message, saveToSentItems: true });
+    const atts = params.attachments || [];
+    const total = atts.reduce((n, a) => n + a.content.length, 0);
+    if (atts.length === 0 || (total <= OutlookEmailProvider.SMALL_ATTACHMENT_LIMIT && atts.every((a) => a.content.length < OutlookEmailProvider.SMALL_ATTACHMENT_LIMIT))) {
+      await client.api("/me/sendMail").post({
+        message: { ...message, attachments: atts.map(OutlookEmailProvider.fileAttachment) },
+        saveToSentItems: true,
+      });
+      return;
+    }
+    // Large attachments: create a draft, attach (upload sessions for big files), then send it.
+    const draft = await client.api("/me/messages").post(message);
+    await this.attachToDraft(draft.id, atts);
+    await client.api(`/me/messages/${draft.id}/send`).post({});
   }
 
-  async replyToMessage(messageId: string, comment: string): Promise<void> {
+  async replyToMessage(messageId: string, comment: string, extras?: ReplyExtras): Promise<void> {
     const client = await this.getClient();
-    await client.api(`/me/messages/${messageId}/reply`).post({ comment });
+    const atts = extras?.attachments || [];
+    const hasExtras = !!(extras?.ccRecipients?.length || extras?.bccRecipients?.length || atts.length);
+    if (!hasExtras) {
+      await client.api(`/me/messages/${messageId}/reply`).post({ comment });
+      return;
+    }
+    const small = atts.every((a) => a.content.length < OutlookEmailProvider.SMALL_ATTACHMENT_LIMIT) &&
+      atts.reduce((n, a) => n + a.content.length, 0) <= OutlookEmailProvider.SMALL_ATTACHMENT_LIMIT;
+    if (small) {
+      await client.api(`/me/messages/${messageId}/reply`).post({
+        comment,
+        message: {
+          ccRecipients: OutlookEmailProvider.recipients(extras?.ccRecipients),
+          bccRecipients: OutlookEmailProvider.recipients(extras?.bccRecipients),
+          attachments: atts.map(OutlookEmailProvider.fileAttachment),
+        },
+      });
+      return;
+    }
+    const draft = await client.api(`/me/messages/${messageId}/createReply`).post({
+      comment,
+      message: {
+        ccRecipients: OutlookEmailProvider.recipients(extras?.ccRecipients),
+        bccRecipients: OutlookEmailProvider.recipients(extras?.bccRecipients),
+      },
+    });
+    await this.attachToDraft(draft.id, atts);
+    await client.api(`/me/messages/${draft.id}/send`).post({});
+  }
+
+  async listAttachments(messageId: string): Promise<AttachmentMeta[]> {
+    const client = await this.getClient();
+    const res = await client
+      .api(`/me/messages/${messageId}/attachments`)
+      .select("id,name,contentType,size,isInline")
+      .get();
+    return ((res.value || []) as Record<string, unknown>[]).map((a) => ({
+      id: a.id as string,
+      name: (a.name as string) || "attachment",
+      contentType: (a.contentType as string) || "application/octet-stream",
+      size: (a.size as number) || 0,
+      isInline: !!a.isInline,
+    }));
+  }
+
+  async getAttachment(messageId: string, attachmentId: string): Promise<{ meta: AttachmentMeta; content: Buffer }> {
+    const client = await this.getClient();
+    const a = await client.api(`/me/messages/${messageId}/attachments/${attachmentId}`).get();
+    if (!a.contentBytes) throw new Error("This attachment type can't be downloaded (it is an embedded item or link)");
+    return {
+      meta: {
+        id: a.id,
+        name: a.name || "attachment",
+        contentType: a.contentType || "application/octet-stream",
+        size: a.size || 0,
+        isInline: !!a.isInline,
+      },
+      content: Buffer.from(a.contentBytes, "base64"),
+    };
   }
 
   async markAsRead(messageId: string): Promise<void> {
@@ -332,6 +448,12 @@ export class OutlookEmailProvider implements EmailProvider {
       })),
       ccRecipients: ccRecipients
         ? ccRecipients.map((r) => ({
+            name: r.emailAddress?.name || "",
+            address: r.emailAddress?.address || "",
+          }))
+        : undefined,
+      bccRecipients: (m.bccRecipients as { emailAddress?: { name?: string; address?: string } }[] | undefined)?.length
+        ? (m.bccRecipients as { emailAddress?: { name?: string; address?: string } }[]).map((r) => ({
             name: r.emailAddress?.name || "",
             address: r.emailAddress?.address || "",
           }))

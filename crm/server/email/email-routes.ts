@@ -7,17 +7,24 @@ import {
   getMicrosoftAuthUrl,
   exchangeMicrosoftCode,
 } from "./providers/outlook";
-import { getGmailAuthUrl, exchangeGmailCode } from "./providers/gmail";
+import { getGmailAuthUrl, exchangeGmailCode, revokeGoogleToken } from "./providers/gmail";
 import { testImapConnection, type ImapSmtpConfig } from "./providers/imap-smtp";
 import { lookupKnownServer, getAllKnownDomains } from "./known-servers";
 import { z } from "zod";
-import { CalendarNotAvailableError, type EmailProvider } from "./provider";
+import {
+  CalendarNotAvailableError,
+  type EmailProvider,
+  type OutgoingAttachment,
+  type NormalizedMessage,
+} from "./provider";
+import { logEmailAudit, type EmailAuditAction } from "./audit";
 
 interface SessionUser {
   id: number;
   email: string;
   type: "staff" | "host";
   emailSetupSkipped: boolean;
+  companyId: number | null;
 }
 
 async function getStaffFromSession(req: { session?: { staffId?: number } }) {
@@ -37,6 +44,7 @@ async function getUserFromSession(req: {
       email: hostUser.email,
       type: "host",
       emailSetupSkipped: hostUser.emailSetupSkipped,
+      companyId: null,
     };
   }
   const staffId = req.session?.staffId;
@@ -48,6 +56,7 @@ async function getUserFromSession(req: {
       email: member.email,
       type: "staff",
       emailSetupSkipped: member.emailSetupSkipped ?? false,
+      companyId: member.companyId ?? null,
     };
   }
   return null;
@@ -62,12 +71,90 @@ async function getEmailConfigForUser(user: SessionUser) {
 
 async function getProviderForUser(
   user: SessionUser,
-): Promise<{ provider: EmailProvider; userEmail: string } | null> {
+): Promise<{ provider: EmailProvider; userEmail: string; providerType: string } | null> {
   const config = await getEmailConfigForUser(user);
   if (!config || !config.isActive) return null;
   const provider = createEmailProvider(config);
-  return { provider, userEmail: user.email };
+  return { provider, userEmail: user.email, providerType: config.provider };
 }
+
+// ── Shared helpers for compose / forward / attachments ──────────────────────────
+const MAX_ATTACHMENT_BYTES_TOTAL = 25 * 1024 * 1024;
+const MAX_ATTACHMENT_COUNT = 10;
+const emailList = z.array(z.string().trim().email()).max(100);
+const attachmentInput = z.object({
+  name: z.string().min(1).max(255),
+  contentType: z.string().max(150).default("application/octet-stream"),
+  contentBase64: z.string().min(1),
+});
+const bodyFormat = z.enum(["text", "html"]).default("html");
+
+function decodeAttachments(list: z.infer<typeof attachmentInput>[] | undefined): OutgoingAttachment[] {
+  const out = (list || []).map((a) => ({
+    // strip path separators and control characters from names
+    name: a.name.replace(/[\\/\u0000-\u001f]/g, "_").trim() || "attachment",
+    contentType: /^[\w.+-]+\/[\w.+-]+$/.test(a.contentType) ? a.contentType : "application/octet-stream",
+    content: Buffer.from(a.contentBase64, "base64"),
+  }));
+  const total = out.reduce((n, a) => n + a.content.length, 0);
+  if (total > MAX_ATTACHMENT_BYTES_TOTAL) {
+    throw new z.ZodError([{ code: "custom", path: ["attachments"], message: "Attachments are larger than 25 MB in total" }]);
+  }
+  return out;
+}
+
+function escapeHtml(t: string): string {
+  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Plain-text compose bodies are escaped and converted to HTML so users can't inject markup by accident. */
+function toHtml(body: string, format: "text" | "html"): string {
+  return format === "html" ? body : `<div style="white-space:pre-wrap;font-family:inherit">${escapeHtml(body)}</div>`;
+}
+
+function auditFrom(req: Record<string, unknown>) {
+  const user = req.emailUser as SessionUser | undefined;
+  const providerType = req.emailProviderType as string | undefined;
+  const ip = ((req as { ip?: string }).ip) || null;
+  return (action: EmailAuditAction, targetId?: string | null, detail?: Record<string, unknown>) => {
+    if (!user) return;
+    void logEmailAudit({
+      companyId: user.companyId,
+      actorType: user.type,
+      actorId: user.id,
+      action,
+      provider: providerType ?? null,
+      targetId: targetId ?? null,
+      detail,
+      ip,
+    });
+  };
+}
+
+function formatAddr(a?: { name?: string; address?: string }): string {
+  if (!a) return "";
+  return a.name ? `${escapeHtml(a.name)} &lt;${escapeHtml(a.address || "")}&gt;` : escapeHtml(a.address || "");
+}
+
+function buildForwardHtml(orig: NormalizedMessage, comment: string): string {
+  const list = (r?: { name?: string; address?: string }[]) => (r || []).map(formatAddr).join(", ");
+  const when = orig.sentDateTime || orig.receivedDateTime;
+  const header = [
+    `<b>From:</b> ${formatAddr(orig.from)}`,
+    when ? `<b>Date:</b> ${escapeHtml(new Date(when).toUTCString())}` : "",
+    `<b>Subject:</b> ${escapeHtml(orig.subject || "")}`,
+    `<b>To:</b> ${list(orig.toRecipients)}`,
+    orig.ccRecipients?.length ? `<b>Cc:</b> ${list(orig.ccRecipients)}` : "",
+  ].filter(Boolean).join("<br>");
+  const origBody = orig.body
+    ? orig.body.contentType === "html"
+      ? orig.body.content
+      : `<div style="white-space:pre-wrap">${escapeHtml(orig.body.content)}</div>`
+    : "";
+  return `${comment}<br><br><div style="border-left:2px solid #ccc;padding-left:10px;margin-left:2px"><div>---------- Forwarded message ----------<br>${header}</div><br>${origBody}</div>`;
+}
+
+const INLINE_SAFE = /^(application\/pdf|image\/(png|jpe?g|gif|webp|bmp))$/i;
 
 export function registerEmailRoutes(app: Express) {
   app.get(
@@ -118,7 +205,15 @@ export function registerEmailRoutes(app: Express) {
         const savedState = (req.session as Record<string, unknown>)
           .microsoftOAuthState as string | undefined;
 
-        if (!code) return res.redirect(`${redirectBase}?error=no_code`);
+        if (!code) {
+          const providerError = req.query.error as string | undefined;
+          if (providerError) {
+            const desc = String(req.query.error_description || providerError).slice(0, 180);
+            console.error("[email] OAuth provider returned an error:", providerError, desc);
+            return res.redirect(`${redirectBase}?error=oauth_denied&detail=${encodeURIComponent(desc)}`);
+          }
+          return res.redirect(`${redirectBase}?error=no_code`);
+        }
 
         if (!returnedState || returnedState !== savedState) {
           return res.redirect(`${redirectBase}?error=invalid_state`);
@@ -191,7 +286,8 @@ export function registerEmailRoutes(app: Express) {
         let provider: EmailProvider;
         try {
           provider = createEmailProvider(config);
-        } catch {
+        } catch (e) {
+          console.error("[email] could not open stored email configuration:", e instanceof Error ? e.message : e);
           return res.json({
             connected: false,
             staffEmail: user.email,
@@ -200,7 +296,8 @@ export function registerEmailRoutes(app: Express) {
         }
         const status = await provider.getStatus(user.email);
         res.json(status);
-      } catch {
+      } catch (e) {
+        console.error("[email] status check failed:", e instanceof Error ? e.message : e);
         res.json({ connected: false, reason: "service_error" as const });
       }
     },
@@ -254,7 +351,15 @@ export function registerEmailRoutes(app: Express) {
         const savedState = (req.session as Record<string, unknown>)
           .gmailOAuthState as string | undefined;
 
-        if (!code) return res.redirect(`${redirectBase}?error=no_code`);
+        if (!code) {
+          const providerError = req.query.error as string | undefined;
+          if (providerError) {
+            const desc = String(req.query.error_description || providerError).slice(0, 180);
+            console.error("[email] OAuth provider returned an error:", providerError, desc);
+            return res.redirect(`${redirectBase}?error=oauth_denied&detail=${encodeURIComponent(desc)}`);
+          }
+          return res.redirect(`${redirectBase}?error=no_code`);
+        }
 
         if (!returnedState || returnedState !== savedState) {
           return res.redirect(`${redirectBase}?error=invalid_state`);
@@ -506,8 +611,22 @@ export function registerEmailRoutes(app: Express) {
 
         const config = await getEmailConfigForUser(user);
         if (config) {
+          // Best-effort revoke at the provider, then wipe every stored credential.
+          if (config.provider === "gmail") {
+            const c = (config.config || {}) as { accessToken?: string; refreshToken?: string };
+            await revokeGoogleToken(c.refreshToken || c.accessToken).catch(() => {});
+          }
           await storage.updateEmailConfiguration(config.id, {
             isActive: false,
+            config: {},
+          });
+          void logEmailAudit({
+            companyId: user.companyId,
+            actorType: user.type,
+            actorId: user.id,
+            action: "account.disconnect",
+            provider: config.provider,
+            ip: req.ip || null,
           });
         }
 
@@ -543,6 +662,8 @@ export function registerEmailRoutes(app: Express) {
       }
 
       (req as Record<string, unknown>).emailProvider = result.provider;
+      (req as Record<string, unknown>).emailUser = user;
+      (req as Record<string, unknown>).emailProviderType = result.providerType;
       next();
     } catch {
       return res.status(502).json({ message: "Email provider unavailable" });
@@ -598,6 +719,7 @@ export function registerEmailRoutes(app: Express) {
         const provider = req.emailProvider as EmailProvider;
         const id = (req as { params: { id: string } }).params.id;
         const message = await provider.getMessage(id);
+        auditFrom(req)("message.view", id);
         res.json(message);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
@@ -616,15 +738,32 @@ export function registerEmailRoutes(app: Express) {
       try {
         const input = z
           .object({
-            subject: z.string().min(1),
+            subject: z.string().min(1).max(998),
             body: z.string().min(1),
-            toRecipients: z.array(z.string().email()),
-            ccRecipients: z.array(z.string().email()).optional(),
+            bodyFormat,
+            toRecipients: emailList.min(1),
+            ccRecipients: emailList.optional(),
+            bccRecipients: emailList.optional(),
+            attachments: z.array(attachmentInput).max(MAX_ATTACHMENT_COUNT).optional(),
           })
           .parse((req as { body: unknown }).body);
 
         const provider = req.emailProvider as EmailProvider;
-        await provider.sendMessage(input);
+        const attachments = decodeAttachments(input.attachments);
+        await provider.sendMessage({
+          subject: input.subject,
+          body: toHtml(input.body, input.bodyFormat),
+          toRecipients: input.toRecipients,
+          ccRecipients: input.ccRecipients,
+          bccRecipients: input.bccRecipients,
+          attachments,
+        });
+        auditFrom(req)("message.send", null, {
+          to: input.toRecipients.length,
+          cc: input.ccRecipients?.length || 0,
+          bcc: input.bccRecipients?.length || 0,
+          attachments: attachments.length,
+        });
         res.json({ success: true });
       } catch (err: unknown) {
         if (err instanceof z.ZodError) {
@@ -647,12 +786,26 @@ export function registerEmailRoutes(app: Express) {
         const input = z
           .object({
             comment: z.string().min(1),
+            bodyFormat,
+            ccRecipients: emailList.optional(),
+            bccRecipients: emailList.optional(),
+            attachments: z.array(attachmentInput).max(MAX_ATTACHMENT_COUNT).optional(),
           })
           .parse((req as { body: unknown }).body);
 
         const provider = req.emailProvider as EmailProvider;
         const id = (req as { params: { id: string } }).params.id;
-        await provider.replyToMessage(id, input.comment);
+        const attachments = decodeAttachments(input.attachments);
+        await provider.replyToMessage(id, toHtml(input.comment, input.bodyFormat), {
+          ccRecipients: input.ccRecipients,
+          bccRecipients: input.bccRecipients,
+          attachments,
+        });
+        auditFrom(req)("message.reply", id, {
+          cc: input.ccRecipients?.length || 0,
+          bcc: input.bccRecipients?.length || 0,
+          attachments: attachments.length,
+        });
         res.json({ success: true });
       } catch (err: unknown) {
         if (err instanceof z.ZodError) {
@@ -660,6 +813,128 @@ export function registerEmailRoutes(app: Express) {
         }
         const message = err instanceof Error ? err.message : "Unknown error";
         res.status(502).json({ message: "Failed to reply", error: message });
+      }
+    },
+  );
+
+  app.get(
+    "/api/email/messages/:id/attachments",
+    isAuthenticated,
+    requireEmailProvider,
+    async (req: Record<string, unknown>, res) => {
+      try {
+        const provider = req.emailProvider as EmailProvider;
+        const id = (req as { params: { id: string } }).params.id;
+        res.json(await provider.listAttachments(id));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        res.status(502).json({ message: "Failed to list attachments", error: message });
+      }
+    },
+  );
+
+  app.get(
+    "/api/email/messages/:id/attachments/:attId",
+    isAuthenticated,
+    requireEmailProvider,
+    async (req: Record<string, unknown>, res) => {
+      try {
+        const provider = req.emailProvider as EmailProvider;
+        const { id, attId } = (req as { params: { id: string; attId: string } }).params;
+        const wantInline = (req as { query: { disposition?: string } }).query.disposition === "inline";
+        const { meta, content } = await provider.getAttachment(id, attId);
+        auditFrom(req)("attachment.download", id, {
+          attachmentId: attId,
+          name: meta.name,
+          size: content.length,
+          contentType: meta.contentType,
+          disposition: wantInline ? "inline" : "attachment",
+        });
+        // Only PDFs and raster images may render in the browser; everything else is forced to download.
+        const inline = wantInline && INLINE_SAFE.test(meta.contentType);
+        const safeName = meta.name.replace(/[\r\n"\\]/g, "_");
+        const r = res as unknown as Response;
+        r.setHeader("Content-Type", inline ? meta.contentType : "application/octet-stream");
+        r.setHeader(
+          "Content-Disposition",
+          `${inline ? "inline" : "attachment"}; filename="${safeName.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
+        );
+        r.setHeader("X-Content-Type-Options", "nosniff");
+        // The CSP sandbox is skipped for PDFs because Chrome's built-in PDF viewer won't load inside one.
+        if (!(inline && /pdf/i.test(meta.contentType))) r.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+        r.setHeader("Cache-Control", "no-store, private");
+        r.setHeader("Content-Length", String(content.length));
+        r.end(content);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        res.status(502).json({ message: "Failed to download attachment", error: message });
+      }
+    },
+  );
+
+  app.post(
+    "/api/email/messages/:id/forward",
+    isAuthenticated,
+    requireEmailProvider,
+    async (req: Record<string, unknown>, res) => {
+      try {
+        const input = z
+          .object({
+            comment: z.string().default(""),
+            bodyFormat,
+            toRecipients: emailList.min(1),
+            ccRecipients: emailList.optional(),
+            bccRecipients: emailList.optional(),
+            includeAttachments: z.boolean().default(true),
+            attachments: z.array(attachmentInput).max(MAX_ATTACHMENT_COUNT).optional(),
+          })
+          .parse((req as { body: unknown }).body);
+
+        const provider = req.emailProvider as EmailProvider;
+        const id = (req as { params: { id: string } }).params.id;
+        const orig = await provider.getMessage(id);
+
+        const outgoing = decodeAttachments(input.attachments);
+        let carried = 0;
+        if (input.includeAttachments) {
+          const metas = (await provider.listAttachments(id)).filter((a) => !a.isInline);
+          let total = outgoing.reduce((n, a) => n + a.content.length, 0);
+          for (const m of metas) {
+            total += m.size;
+            if (total > MAX_ATTACHMENT_BYTES_TOTAL) {
+              return res.status(400).json({ message: "Original attachments plus new files exceed 25 MB" });
+            }
+          }
+          for (const m of metas) {
+            const got = await provider.getAttachment(id, m.id);
+            outgoing.push({ name: got.meta.name, contentType: got.meta.contentType, content: got.content });
+            carried++;
+          }
+        }
+
+        const subject = /^(fwd?|fw):/i.test(orig.subject) ? orig.subject : `Fwd: ${orig.subject}`;
+        await provider.sendMessage({
+          subject,
+          body: buildForwardHtml(orig, toHtml(input.comment, input.bodyFormat)),
+          toRecipients: input.toRecipients,
+          ccRecipients: input.ccRecipients,
+          bccRecipients: input.bccRecipients,
+          attachments: outgoing,
+        });
+        auditFrom(req)("message.forward", id, {
+          to: input.toRecipients.length,
+          cc: input.ccRecipients?.length || 0,
+          bcc: input.bccRecipients?.length || 0,
+          attachments: outgoing.length,
+          carriedOriginalAttachments: carried,
+        });
+        res.json({ success: true });
+      } catch (err: unknown) {
+        if (err instanceof z.ZodError) {
+          return res.status(400).json({ message: err.errors[0].message });
+        }
+        const message = err instanceof Error ? err.message : "Unknown error";
+        res.status(502).json({ message: "Failed to forward", error: message });
       }
     },
   );
@@ -692,6 +967,7 @@ export function registerEmailRoutes(app: Express) {
         const provider = req.emailProvider as EmailProvider;
         const id = (req as { params: { id: string } }).params.id;
         await provider.deleteMessage(id);
+        auditFrom(req)("message.delete", id);
         res.status(204).send();
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";

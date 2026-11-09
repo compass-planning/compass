@@ -11,6 +11,8 @@ import {
   type SendMessageParams,
   type CreateEventParams,
   type UpdateEventParams,
+  type AttachmentMeta,
+  type ReplyExtras,
 } from "../provider";
 
 export interface ImapSmtpConfig {
@@ -211,6 +213,13 @@ export class ImapSmtpEmailProvider implements EmailProvider {
                   address: r.address || "",
                 }))
               : undefined,
+          attachments: (parsed.attachments || []).map((a, i) => ({
+            id: String(i),
+            name: a.filename || `attachment-${i + 1}`,
+            contentType: a.contentType || "application/octet-stream",
+            size: a.size || 0,
+            isInline: a.contentDisposition === "inline" && !!a.related,
+          })),
           receivedDateTime: parsed.date?.toISOString(),
           sentDateTime: parsed.date?.toISOString(),
           bodyPreview: parsed.text?.substring(0, 200) || "",
@@ -234,26 +243,81 @@ export class ImapSmtpEmailProvider implements EmailProvider {
     const transport = this.getSmtpTransport();
     await transport.sendMail({
       from: this.config.email,
-      to: params.toRecipients.join(", "),
-      cc: params.ccRecipients?.join(", "),
+      to: params.toRecipients,
+      cc: params.ccRecipients,
+      bcc: params.bccRecipients,
       subject: params.subject,
       html: params.body,
+      attachments: (params.attachments || []).map((a) => ({
+        filename: a.name,
+        content: a.content,
+        contentType: a.contentType,
+      })),
     });
   }
 
-  async replyToMessage(messageId: string, comment: string): Promise<void> {
+  async replyToMessage(messageId: string, comment: string, extras?: ReplyExtras): Promise<void> {
     const original = await this.getMessage(messageId);
     const transport = this.getSmtpTransport();
-    const subject = original.subject.startsWith("Re:")
-      ? original.subject
-      : `Re: ${original.subject}`;
+    const subject = /^re:/i.test(original.subject) ? original.subject : `Re: ${original.subject}`;
 
     await transport.sendMail({
       from: this.config.email,
       to: original.from.address,
+      cc: extras?.ccRecipients,
+      bcc: extras?.bccRecipients,
       subject,
       html: comment,
+      attachments: (extras?.attachments || []).map((a) => ({
+        filename: a.name,
+        content: a.content,
+        contentType: a.contentType,
+      })),
     });
+  }
+
+  private async fetchParsedAttachments(messageId: string) {
+    const { folder, uid } = this.parseMessageId(messageId);
+    const client = await this.getImapClient();
+    try {
+      const lock = await client.getMailboxLock(folder);
+      try {
+        const source = await client.fetchOne(uid, { source: true }, { uid: true });
+        const parsed = await simpleParser(source.source);
+        return parsed.attachments || [];
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  async listAttachments(messageId: string): Promise<AttachmentMeta[]> {
+    const atts = await this.fetchParsedAttachments(messageId);
+    return atts.map((a, i) => ({
+      id: String(i),
+      name: a.filename || `attachment-${i + 1}`,
+      contentType: a.contentType || "application/octet-stream",
+      size: a.size || 0,
+      isInline: a.contentDisposition === "inline" && !!a.related,
+    }));
+  }
+
+  async getAttachment(messageId: string, attachmentId: string): Promise<{ meta: AttachmentMeta; content: Buffer }> {
+    const atts = await this.fetchParsedAttachments(messageId);
+    const i = Number(attachmentId);
+    const a = Number.isInteger(i) ? atts[i] : undefined;
+    if (!a) throw new Error("Attachment not found");
+    return {
+      meta: {
+        id: String(i),
+        name: a.filename || `attachment-${i + 1}`,
+        contentType: a.contentType || "application/octet-stream",
+        size: a.size || 0,
+      },
+      content: a.content,
+    };
   }
 
   async markAsRead(messageId: string): Promise<void> {

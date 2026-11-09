@@ -131,10 +131,22 @@ app.use("/api/", (_req, res, next) => {
 // ── Body parsing ────────────────────────────────────────────────────────────────
 // Global limit: 1mb — sufficient for all JSON API calls.
 // Upload routes override this with their own express.json({ limit: "20mb" }).
-app.use(express.json({
+// Routes that legitimately carry large JSON bodies are parsed with their own limit below;
+// the global parser must skip them or it would reject them at 1mb first.
+const LARGE_BODY_ROUTES: Array<[RegExp, string]> = [
+  [/^\/api\/documents/, "20mb"],
+  [/^\/api\/meetings\/recording/, "20mb"],
+  [/^\/api\/clients\/[^/]+\/import/, "10mb"],
+  [/^\/api\/email\/messages/, "35mb"], // base64 attachments (~25MB of files)
+];
+const globalJson = express.json({
   limit: "1mb",
   verify: (req, _res, buf) => { (req as any).rawBody = buf; },
-}));
+});
+app.use((req, res, next) => {
+  if (LARGE_BODY_ROUTES.some(([re]) => re.test(req.path))) return next();
+  return globalJson(req, res, next);
+});
 app.use(express.urlencoded({ extended: false }));
 
 // Never send credential material to the browser: strip secret columns from every JSON response,
@@ -156,9 +168,10 @@ app.use((_req, res, next) => {
 });
 
 // Override body limit for routes that legitimately need large payloads.
-app.use("/api/documents",        express.json({ limit: "20mb" }));
-app.use("/api/meetings/recording", express.json({ limit: "20mb" }));
-app.use("/api/clients/:id/import", express.json({ limit: "10mb" }));
+for (const [re, limit] of LARGE_BODY_ROUTES) {
+  const parser = express.json({ limit });
+  app.use((req, res, next) => (re.test(req.path) ? parser(req, res, next) : next()));
+}
 
 // Legacy log() shim — backed by pino. New code should import logger directly.
 export function log(message: string, source = "express") {

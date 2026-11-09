@@ -166,12 +166,20 @@ import {
   isNull,
 } from "drizzle-orm";
 
+
+/**
+ * Tenant-scoped list methods are fail-closed: a missing companyId returns nothing instead of every
+ * tenant's rows. Platform-wide reads (host portal numbering, first-run seeding) must opt in explicitly.
+ */
+export const ALL_COMPANIES = "ALL_COMPANIES" as const;
+export type CompanyScope = number | typeof ALL_COMPANIES;
+
 export interface IStorage {
   getCompany(id: number): Promise<Company | undefined>;
   createCompany(company: InsertCompany): Promise<Company>;
   updateCompany(id: number, updates: UpdateCompanySettings): Promise<Company>;
 
-  getStaffMembers(companyId?: number): Promise<StaffMember[]>;
+  getStaffMembers(companyId?: CompanyScope): Promise<StaffMember[]>;
   getStaffMember(id: number): Promise<StaffMember | undefined>;
   getStaffMemberByAuthId(authId: string): Promise<StaffMember | undefined>;
   createStaffMember(member: InsertStaffMember): Promise<StaffMember>;
@@ -194,14 +202,14 @@ export interface IStorage {
   ): Promise<StaffChild>;
   deleteStaffChild(id: number): Promise<void>;
 
-  getAdvisorAssignments(companyId?: number): Promise<AdvisorAssignment[]>;
+  getAdvisorAssignments(companyId?: CompanyScope): Promise<AdvisorAssignment[]>;
   getAdvisorsByAdmin(adminId: number): Promise<StaffMember[]>;
   createAdvisorAssignment(
     assignment: InsertAdvisorAssignment,
   ): Promise<AdvisorAssignment>;
   deleteAdvisorAssignment(id: number): Promise<void>;
 
-  getClients(companyId?: number): Promise<Client[]>;
+  getClients(companyId?: CompanyScope): Promise<Client[]>;
   getClientsByAdvisor(advisorId: number): Promise<Client[]>;
   getClientsByAdvisors(advisorIds: number[]): Promise<Client[]>;
   getClient(id: number): Promise<Client | undefined>;
@@ -365,7 +373,7 @@ export interface IStorage {
   ): Promise<AiRecommendation>;
   deleteAiRecommendation(id: number): Promise<void>;
 
-  getLeads(companyId?: number): Promise<Lead[]>;
+  getLeads(companyId?: CompanyScope): Promise<Lead[]>;
   getLeadsByAdvisor(advisorId: number): Promise<Lead[]>;
   getLeadsByAdvisors(advisorIds: number[]): Promise<Lead[]>;
   getLead(id: number): Promise<Lead | undefined>;
@@ -390,7 +398,7 @@ export interface IStorage {
 
   getAllCompanies(): Promise<Company[]>;
 
-  getServiceCases(companyId?: number): Promise<ServiceCase[]>;
+  getServiceCases(companyId?: CompanyScope): Promise<ServiceCase[]>;
   getServiceCase(id: number): Promise<ServiceCase | undefined>;
   createServiceCase(c: InsertServiceCase): Promise<ServiceCase>;
   updateServiceCase(
@@ -401,7 +409,7 @@ export interface IStorage {
   getServiceCaseNotes(caseId: number): Promise<ServiceCaseNote[]>;
   createServiceCaseNote(note: InsertServiceCaseNote): Promise<ServiceCaseNote>;
 
-  getHostInvoices(companyId?: number): Promise<HostInvoice[]>;
+  getHostInvoices(companyId?: CompanyScope): Promise<HostInvoice[]>;
   getHostInvoice(id: number): Promise<HostInvoice | undefined>;
   createHostInvoice(invoice: InsertHostInvoice): Promise<HostInvoice>;
   updateHostInvoice(
@@ -611,14 +619,15 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getStaffMembers(companyId?: number): Promise<StaffMember[]> {
-    if (companyId) {
+  async getStaffMembers(companyId?: CompanyScope): Promise<StaffMember[]> {
+    if (typeof companyId === "number") {
       return await db
         .select()
         .from(staff)
         .where(eq(staff.companyId, companyId));
     }
-    return await db.select().from(staff);
+    if (companyId === ALL_COMPANIES) return await db.select().from(staff);
+    return [];
   }
 
   async getStaffMember(id: number): Promise<StaffMember | undefined> {
@@ -718,9 +727,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAdvisorAssignments(
-    companyId?: number,
+    companyId?: CompanyScope,
   ): Promise<AdvisorAssignment[]> {
-    if (companyId) {
+    if (typeof companyId === "number") {
       const companyStaff = await db
         .select({ id: staff.id })
         .from(staff)
@@ -732,7 +741,8 @@ export class DatabaseStorage implements IStorage {
         .from(advisorAssignments)
         .where(inArray(advisorAssignments.adminId, staffIds));
     }
-    return await db.select().from(advisorAssignments);
+    if (companyId === ALL_COMPANIES) return await db.select().from(advisorAssignments);
+    return [];
   }
 
   async getAdvisorsByAdmin(adminId: number): Promise<StaffMember[]> {
@@ -759,14 +769,15 @@ export class DatabaseStorage implements IStorage {
     await db.delete(advisorAssignments).where(eq(advisorAssignments.id, id));
   }
 
-  async getClients(companyId?: number): Promise<Client[]> {
-    if (companyId) {
+  async getClients(companyId?: CompanyScope): Promise<Client[]> {
+    if (typeof companyId === "number") {
       return await db
         .select()
         .from(clients)
         .where(eq(clients.companyId, companyId));
     }
-    return await db.select().from(clients);
+    if (companyId === ALL_COMPANIES) return await db.select().from(clients);
+    return [];
   }
 
   async getClientsByAdvisor(advisorId: number): Promise<Client[]> {
@@ -1408,14 +1419,15 @@ export class DatabaseStorage implements IStorage {
     await db.delete(aiRecommendations).where(eq(aiRecommendations.id, id));
   }
 
-  async getLeads(companyId?: number): Promise<Lead[]> {
-    if (companyId) {
+  async getLeads(companyId?: CompanyScope): Promise<Lead[]> {
+    if (typeof companyId === "number") {
       return await db
         .select()
         .from(leads)
         .where(eq(leads.companyId, companyId));
     }
-    return await db.select().from(leads);
+    if (companyId === ALL_COMPANIES) return await db.select().from(leads);
+    return [];
   }
 
   async getLeadsByAdvisor(advisorId: number): Promise<Lead[]> {
@@ -1539,14 +1551,15 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(companies);
   }
 
-  async getServiceCases(companyId?: number): Promise<ServiceCase[]> {
-    if (companyId) {
+  async getServiceCases(companyId?: CompanyScope): Promise<ServiceCase[]> {
+    if (typeof companyId === "number") {
       return await db
         .select()
         .from(serviceCases)
         .where(eq(serviceCases.companyId, companyId));
     }
-    return await db.select().from(serviceCases);
+    if (companyId === ALL_COMPANIES) return await db.select().from(serviceCases);
+    return [];
   }
 
   async getServiceCase(id: number): Promise<ServiceCase | undefined> {
@@ -1591,14 +1604,15 @@ export class DatabaseStorage implements IStorage {
     return newNote;
   }
 
-  async getHostInvoices(companyId?: number): Promise<HostInvoice[]> {
-    if (companyId) {
+  async getHostInvoices(companyId?: CompanyScope): Promise<HostInvoice[]> {
+    if (typeof companyId === "number") {
       return await db
         .select()
         .from(hostInvoices)
         .where(eq(hostInvoices.companyId, companyId));
     }
-    return await db.select().from(hostInvoices);
+    if (companyId === ALL_COMPANIES) return await db.select().from(hostInvoices);
+    return [];
   }
 
   async getHostInvoice(id: number): Promise<HostInvoice | undefined> {

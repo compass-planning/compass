@@ -37,6 +37,7 @@ interface EmailStatus {
   staffEmail?: string;
   provider?: string;
   reason?: "not_configured" | "service_error" | "no_provider";
+  detail?: string;
 }
 
 export default function Calendar() {
@@ -85,10 +86,10 @@ export default function Calendar() {
             </h2>
             <p className="text-slate-500 mb-6" data-testid="text-calendar-setup-info">
               {isServiceError
-                ? "The calendar service is temporarily unavailable. Please try again later."
+                ? "The calendar service is temporarily unavailable. Please try again later." + (emailStatus?.detail ? ` (${emailStatus.detail})` : "")
                 : "To use the calendar within Compass CRM, your email account needs to be connected and must match your staff email address."}
             </p>
-            {!isServiceError && (
+            {(
               <div className="mb-6 space-y-3">
                 <ConnectEmailPrompt testId="button-connect-email-calendar" />
                 <p className="text-xs text-slate-500">Works with Microsoft 365 / Outlook and Google / Gmail. You can also manage this later in Settings.</p>

@@ -7,6 +7,7 @@ import {
   estateAnalyses, cashFlowBudgets, aiRecommendations, children, documents,
   activities, products, meetings, financialPlans, netWorthEntries,
   retirementProjections, insuranceAnalyses, planActionItems, planAssumptions,
+  staff, staffDocuments, staffChildren,
 } from "@shared/schema";
 
 // ── Session helpers ──────────────────────────────────────────────────────────
@@ -94,6 +95,28 @@ export async function verifyPlanChildOwnership(
     res.status(403).json({ message: "Access denied" }); return false;
   }
   return true;
+}
+
+/**
+ * The target staff member must belong to the caller's company. Responds 404 (not 403) so the
+ * existence of other firms' staff IDs isn't revealed. Fail-closed when either side has no company.
+ */
+export async function verifyStaffInCompany(req: any, res: Response, staffId: number): Promise<boolean> {
+  const companyId = await getCompanyId(req);
+  if (!companyId || !Number.isInteger(staffId)) { res.status(404).json({ message: "Not found" }); return false; }
+  const [row] = await db.select({ companyId: staff.companyId }).from(staff).where(eq(staff.id, staffId));
+  if (!row || row.companyId !== companyId) { res.status(404).json({ message: "Not found" }); return false; }
+  return true;
+}
+
+/** A staff-owned child record (document / child) must belong to a staff member of the caller's company. */
+export async function verifyStaffChildRecordOwnership(
+  req: any, res: Response, table: typeof staffDocuments | typeof staffChildren, recordId: number
+): Promise<boolean> {
+  if (!Number.isInteger(recordId)) { res.status(404).json({ message: "Not found" }); return false; }
+  const [rec] = await db.select({ staffId: table.staffId }).from(table).where(eq(table.id, recordId));
+  if (!rec) { res.status(404).json({ message: "Not found" }); return false; }
+  return verifyStaffInCompany(req, res, rec.staffId);
 }
 
 // ── Password change enforcement ───────────────────────────────────────────────

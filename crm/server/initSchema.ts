@@ -7,6 +7,25 @@ import { BASELINE_SQL } from "./baselineSql";
  * first-run baseline, so existing databases pick them up without a manual migration.
  */
 const ADDITIVE_SQL = `
+CREATE TABLE IF NOT EXISTS email_audit_logs (
+  id serial PRIMARY KEY NOT NULL,
+  company_id integer,
+  actor_type text NOT NULL,
+  actor_id integer NOT NULL,
+  action text NOT NULL,
+  provider text,
+  target_id text,
+  detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+  ip text,
+  prev_hash text NOT NULL,
+  hash text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS median_outcome numeric(15,2);
+ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS percentile_10 numeric(15,2);
+ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS percentile_90 numeric(15,2);
+ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS paths jsonb;
+CREATE INDEX IF NOT EXISTS email_audit_logs_company_idx ON email_audit_logs (company_id, id);
 CREATE TABLE IF NOT EXISTS scenario_comparisons (
   id serial PRIMARY KEY NOT NULL,
   client_id integer NOT NULL,
