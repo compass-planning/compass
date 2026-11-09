@@ -555,7 +555,7 @@ function MessageDetail({ message, folderWellKnown, onBack, onReply, onForward, o
             )}
           </div>
           <span className="text-xs text-slate-500 flex-shrink-0">
-            {msg.receivedDateTime ? format(new Date(msg.receivedDateTime), "MMM d, yyyy 'at' h:mm a") : ""}
+            {validDate(msg.receivedDateTime) ? format(validDate(msg.receivedDateTime)!, "MMM d, yyyy 'at' h:mm a") : ""}
           </span>
         </div>
 
@@ -769,14 +769,21 @@ function ComposeView({ replyTo, forwardOf, onCancel, onSent }: {
   );
 }
 
-function formatReceivedDate(dateStr?: string) {
-  if (!dateStr) return "";
+function validDate(dateStr?: string) {
+  if (!dateStr) return null;
   const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatReceivedDate(dateStr?: string) {
+  const d = validDate(dateStr);
+  if (!d) return "";
   return d.toDateString() === new Date().toDateString() ? "Today" : format(d, "MMM d, yyyy");
 }
 
 function formatReceivedTime(dateStr?: string) {
-  return dateStr ? format(new Date(dateStr), "h:mm a") : "";
+  const d = validDate(dateStr);
+  return d ? format(d, "h:mm a") : "";
 }
 
 function formatDate(dateStr?: string) {

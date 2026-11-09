@@ -506,6 +506,11 @@ export class GmailEmailProvider implements EmailProvider {
     const cc = this.parseEmailAddresses(this.getHeader(headers, "Cc"));
     const bcc = this.parseEmailAddresses(this.getHeader(headers, "Bcc"));
     const dateStr = this.getHeader(headers, "Date");
+    // Gmail's internalDate (epoch ms) is the real receive time; the Date header is sender-supplied and can be missing/unparseable.
+    const internalMs = Number(msg.internalDate);
+    const receivedIso = Number.isFinite(internalMs) && internalMs > 0 ? new Date(internalMs).toISOString() : undefined;
+    const headerParsed = dateStr ? new Date(dateStr) : undefined;
+    const headerIso = headerParsed && !isNaN(headerParsed.getTime()) ? headerParsed.toISOString() : undefined;
     const isUnread = labelIds?.includes("UNREAD") ?? false;
     const isDraft = labelIds?.includes("DRAFT") ?? false;
 
@@ -516,8 +521,8 @@ export class GmailEmailProvider implements EmailProvider {
       toRecipients: to,
       ccRecipients: cc.length > 0 ? cc : undefined,
       bccRecipients: bcc.length > 0 ? bcc : undefined,
-      receivedDateTime: dateStr ? new Date(dateStr).toISOString() : undefined,
-      sentDateTime: dateStr ? new Date(dateStr).toISOString() : undefined,
+      receivedDateTime: receivedIso || headerIso,
+      sentDateTime: headerIso || receivedIso,
       bodyPreview: (msg.snippet as string) || "",
       body: this.getBodyContent(payload),
       isRead: !isUnread,
