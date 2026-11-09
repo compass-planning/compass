@@ -277,7 +277,7 @@ function EmailClient({ connectedEmail, connectedDisplayName }: { connectedEmail?
         </nav>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 min-w-0 flex overflow-hidden">
         {composing ? (
           <ComposeView
             replyTo={replyingTo}
@@ -345,8 +345,8 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-white">
+    <div className="flex-1 min-w-0 flex flex-col bg-background">
+      <div className="flex items-center justify-between px-4 py-4 border-b border-border bg-white">
         <h2 className="text-base font-bold text-slate-900" data-testid="text-mail-view-title">
           {folderName}
         </h2>
