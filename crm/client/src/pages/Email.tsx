@@ -362,6 +362,14 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
         </button>
       </div>
 
+      {!isLoading && messages && messages.length > 0 && (
+        <div className="flex items-center gap-3 px-6 py-2 border-b border-border bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500" data-testid="header-message-columns">
+          <span className="flex-1 min-w-0">{isSentFolder ? "To / Subject" : "From / Subject"}</span>
+          <span className="w-36 flex-shrink-0 text-right" data-testid="header-received">{isSentFolder ? "Sent" : "Received"}</span>
+          <span className="w-12 flex-shrink-0" />
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="space-y-0 animate-pulse">
@@ -406,16 +414,17 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
                     {isDraftFolder && (
                       <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Draft</span>
                     )}
-                    <span className="text-xs text-slate-500 ml-auto flex-shrink-0">
-                      {formatDate(msg.receivedDateTime || msg.sentDateTime)}
-                    </span>
                   </div>
                   <p className={`text-sm truncate mb-1 ${!msg.isRead && !isSentFolder ? "font-semibold" : ""}`}>
                     {msg.subject || "(No Subject)"}
                   </p>
                   <p className="text-xs text-slate-500 truncate">{msg.bodyPreview}</p>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0 pt-1">
+                <div className="w-36 flex-shrink-0 text-right pt-0.5" data-testid={`text-received-${msg.id}`}>
+                  <p className="text-xs text-slate-700 whitespace-nowrap">{formatReceivedDate(msg.receivedDateTime || msg.sentDateTime)}</p>
+                  <p className="text-[11px] text-slate-500 whitespace-nowrap">{formatReceivedTime(msg.receivedDateTime || msg.sentDateTime)}</p>
+                </div>
+                <div className="flex items-center justify-end gap-1 w-12 flex-shrink-0 pt-1">
                   {msg.hasAttachments && <Paperclip className="w-3.5 h-3.5 text-slate-500" />}
                   {msg.importance === "high" && <Star className="w-3.5 h-3.5 text-amber-500" />}
                   <ChevronRight className="w-4 h-4 text-slate-500/50" />
@@ -758,6 +767,16 @@ function ComposeView({ replyTo, forwardOf, onCancel, onSent }: {
       </div>
     </div>
   );
+}
+
+function formatReceivedDate(dateStr?: string) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toDateString() === new Date().toDateString() ? "Today" : format(d, "MMM d, yyyy");
+}
+
+function formatReceivedTime(dateStr?: string) {
+  return dateStr ? format(new Date(dateStr), "h:mm a") : "";
 }
 
 function formatDate(dateStr?: string) {

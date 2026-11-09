@@ -8,7 +8,7 @@ import { children, documents, activities, insertClientSchema, advisorAssignments
 import { isAuthenticated } from "../auth";
 import {
   getStaffFromSession, getCompanyId, denyHostUsers,
-  verifyClientOwnership, verifyFpRecordOwnership,
+  verifyClientOwnership, verifyFpRecordOwnership, validateClientAdvisorAssignment,
 } from "./middleware";
 
 export const clientsRouter = Router();
@@ -85,6 +85,7 @@ clientsRouter.post("/api/clients", isAuthenticated, async (req: any, res) => {
         spouseId: z.coerce.number().optional().nullable(),
       })
       .parse(req.body);
+    if (!(await validateClientAdvisorAssignment(req, res, input.advisorId))) return;
     const companyId = await getCompanyId(req);
     const client = await storage.createClient({ ...input, companyId });
     if (client.spouseId) {
@@ -109,6 +110,7 @@ clientsRouter.put("/api/clients/:id", isAuthenticated, async (req: any, res) => 
     const existing = await storage.getClient(clientId);
     if (!existing) return res.status(404).json({ message: "Client not found" });
     const input = api.clients.update.input.parse(req.body);
+    if ((input as any).advisorId !== undefined && (input as any).advisorId !== existing.advisorId && !(await validateClientAdvisorAssignment(req, res, (input as any).advisorId))) return;
     const oldSpouseId = existing.spouseId;
     const newSpouseId = input.spouseId !== undefined ? input.spouseId : oldSpouseId;
     const client = await storage.updateClient(clientId, input);
@@ -142,6 +144,7 @@ clientsRouter.patch("/api/clients/:id", isAuthenticated, async (req: any, res) =
     const existing = await storage.getClient(clientId);
     if (!existing) return res.status(404).json({ message: "Client not found" });
     const input = insertClientSchema.partial().parse(req.body);
+    if (input.advisorId !== undefined && input.advisorId !== existing.advisorId && !(await validateClientAdvisorAssignment(req, res, input.advisorId))) return;
     const client = await storage.updateClient(clientId, input);
     res.json(client);
   } catch (err) {

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
-import { getStaffFromSession, getCompanyId, _verifyClientOwnership } from "./middleware";
+import { getStaffFromSession, getCompanyId, _verifyClientOwnership, validateClientAdvisorAssignment } from "./middleware";
 
 export const pipelineRouter = Router();
 
@@ -48,6 +48,7 @@ pipelineRouter.post("/", isAuthenticated, async (req: any, res) => {
       message: "At least one of email or phone is required",
     }).parse(req.body);
 
+    if (!(await validateClientAdvisorAssignment(req, res, input.advisorId))) return;
     const companyId = await getCompanyId(req);
     const lead = await storage.createLead({ ...input, companyId });
 
@@ -97,6 +98,9 @@ pipelineRouter.put("/:id", isAuthenticated, async (req: any, res) => {
       notes: z.string().optional().nullable(),
       advisorId: z.coerce.number().optional(),
     }).parse(req.body);
+
+    // Leads may only be reassigned to people the caller is allowed to assign to (sales managers: GM, self, own advisors).
+    if (input.advisorId !== undefined && input.advisorId !== existing.advisorId && !(await validateClientAdvisorAssignment(req, res, input.advisorId))) return;
 
     let stageHistory: string | undefined;
     if (input.stage && input.stage !== existing.stage) {

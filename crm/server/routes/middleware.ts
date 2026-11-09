@@ -98,6 +98,33 @@ export async function verifyPlanChildOwnership(
 }
 
 /**
+ * Staff a client can be assigned to by the caller.
+ *  - Sales manager: the company's general manager(s), themselves, and the advisors assigned to them.
+ *  - Everyone else: any staff member of their own company (unchanged behaviour).
+ * Always limited to the caller's company.
+ */
+export async function getAssignableStaffForClients(req: any): Promise<any[]> {
+  const companyId = await getCompanyId(req);
+  const caller = await getStaffFromSession(req);
+  if (!companyId || !caller) return [];
+  const members = (await storage.getStaffMembers(companyId)).filter((m: any) => m.isActive !== false);
+  if (caller.role !== "sales_manager") return members;
+  const team = new Set((await storage.getAdvisorsByAdmin(caller.id)).map((a: any) => a.id));
+  return members.filter((m: any) => m.role === "general_manager" || m.id === caller.id || team.has(m.id));
+}
+
+/** Rejects (404) an advisorId the caller is not allowed to assign a client to. null/undefined is always fine. */
+export async function validateClientAdvisorAssignment(req: any, res: Response, advisorId: unknown): Promise<boolean> {
+  if (advisorId === null || advisorId === undefined) return true;
+  const allowed = await getAssignableStaffForClients(req);
+  if (!allowed.some((m: any) => m.id === Number(advisorId))) {
+    res.status(400).json({ message: "You can't assign a client to that person", field: "advisorId" });
+    return false;
+  }
+  return true;
+}
+
+/**
  * The target staff member must belong to the caller's company. Responds 404 (not 403) so the
  * existence of other firms' staff IDs isn't revealed. Fail-closed when either side has no company.
  */

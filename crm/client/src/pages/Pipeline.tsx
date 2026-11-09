@@ -3,7 +3,8 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { Link, useSearch } from "wouter";
 import { AppLayout } from "@/components/AppLayout";
 import { useLeads, useLead, useCreateLead, useUpdateLead, useDeleteLead, useLeadActivities, useCreateLeadActivity } from "@/hooks/use-leads";
-import { useStaffMembers } from "@/hooks/use-users";
+import { useStaffMembers, useCurrentStaff } from "@/hooks/use-users";
+import { useQuery } from "@tanstack/react-query";
 import { pipelineStages, leadSources, productInterestTypes } from "@shared/schema";
 import type { Lead, StaffMember } from "@shared/schema";
 import {
@@ -12,6 +13,20 @@ import {
 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { useWindowManager } from "@/contexts/WindowManagerContext";
+
+/**
+ * Who a lead can be assigned to. Sales managers get the general manager, themselves and their own advisors
+ * (decided by the server); everyone else keeps the usual list of advisors.
+ */
+const advisorLabel = (a: StaffMember) => `${a.firstName} ${a.lastName}${a.role === "general_manager" ? " (General Manager)" : ""}`;
+
+function useAdvisorChoices(allStaff: StaffMember[]): StaffMember[] {
+  const { data: me } = useCurrentStaff();
+  const isSM = me?.role === "sales_manager";
+  const { data: assignable } = useQuery<StaffMember[]>({ queryKey: ["/api/crm/staff/assignable-advisors"], enabled: isSM });
+  if (isSM) return assignable ?? [];
+  return allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
+}
 
 function getStageConfig(isFr: boolean) {
   return {
@@ -501,7 +516,7 @@ function _LeadRow({ lead, allStaff, onStageChange, onReassign, onClick, stage, a
   const SOURCE_LABELS = getSourceLabels(isFr);
   const PRODUCT_INTEREST_LABELS = getProductInterestLabels(isFr);
   const _advisor = lead.advisorId ? allStaff.find(s => s.id === lead.advisorId) : null;
-  const advisors = allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
+  const advisors = useAdvisorChoices(allStaff);
   const daysInPipeline = differenceInDays(new Date(), new Date(lead.createdAt!));
   const config = STAGE_CONFIG[lead.stage] || STAGE_CONFIG.lead;
 
@@ -564,7 +579,7 @@ function _LeadRow({ lead, allStaff, onStageChange, onReassign, onClick, stage, a
           className="px-2 py-1.5 rounded-lg text-xs font-medium border border-border bg-background focus:ring-2 focus:ring-primary/20 cursor-pointer appearance-none pr-7 bg-no-repeat bg-[length:14px] bg-[right_4px_center] max-w-[140px] truncate"
           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")` }}
         >
-          {advisors.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+          {advisors.map(a => <option key={a.id} value={a.id}>{advisorLabel(a)}</option>)}
         </select>
       </td>
       <td className="px-4 py-3">
@@ -603,7 +618,7 @@ function CreateLeadModal({ allStaff, onClose }: { allStaff: StaffMember[]; onClo
   const SOURCE_LABELS = getSourceLabels(isFr);
   const PRODUCT_INTEREST_LABELS = getProductInterestLabels(isFr);
   const createLead = useCreateLead();
-  const advisors = allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
+  const advisors = useAdvisorChoices(allStaff);
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -694,7 +709,7 @@ function CreateLeadModal({ allStaff, onClose }: { allStaff: StaffMember[]; onClo
           <div className="space-y-1.5">
             <label className="text-sm font-semibold text-foreground">Assigned Sales Rep *</label>
             <select value={formData.advisorId ?? ""} onChange={e => setFormData({...formData, advisorId: Number(e.target.value)})} data-testid="select-lead-advisor" className="w-full px-4 py-2.5 rounded-xl border border-border focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400 bg-background" required>
-              {advisors.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+              {advisors.map(a => <option key={a.id} value={a.id}>{advisorLabel(a)}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
@@ -731,7 +746,7 @@ export function LeadDetailContent({ leadId }: { leadId: number }) {
 
   if (!lead) return <div className="animate-pulse h-48 bg-muted rounded-xl" />;
 
-  const advisors = allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
+  const advisors = useAdvisorChoices(allStaff);
   const _advisor = lead.advisorId ? allStaff.find(s => s.id === lead.advisorId) : null;
   const config = STAGE_CONFIG[lead.stage] || STAGE_CONFIG.lead;
   const daysInPipeline = differenceInDays(new Date(), new Date(lead.createdAt!));
@@ -801,7 +816,7 @@ export function LeadDetailContent({ leadId }: { leadId: number }) {
             data-testid="select-popout-reassign"
             className="px-2 py-1 rounded-lg text-xs font-medium border border-border bg-background focus:ring-2 focus:ring-primary/20 cursor-pointer"
           >
-            {advisors.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+            {advisors.map(a => <option key={a.id} value={a.id}>{advisorLabel(a)}</option>)}
           </select>
         </div>
       </div>
@@ -875,7 +890,7 @@ function LeadDetailModal({ lead, allStaff, onClose }: { lead: Lead; allStaff: St
   const deleteLead = useDeleteLead();
   const { data: activities = [] } = useLeadActivities(current.id);
   const createActivity = useCreateLeadActivity();
-  const advisors = allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
+  const advisors = useAdvisorChoices(allStaff);
   const _advisor = current.advisorId ? allStaff.find(s => s.id === current.advisorId) : null;
   const { openWindow } = useWindowManager();
 
@@ -1029,7 +1044,7 @@ function LeadDetailModal({ lead, allStaff, onClose }: { lead: Lead; allStaff: St
                 </select>
               </div>
               <select value={editData.advisorId ?? ""} onChange={e => setEditData({...editData, advisorId: Number(e.target.value)})} data-testid="select-edit-lead-advisor" className="w-full px-3 py-2 rounded-lg border border-border text-sm bg-background" required>
-                {advisors.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+                {advisors.map(a => <option key={a.id} value={a.id}>{advisorLabel(a)}</option>)}
               </select>
               <textarea value={editData.notes} onChange={e => setEditData({...editData, notes: e.target.value})} placeholder="Notes" data-testid="input-edit-lead-notes" className="w-full px-3 py-2 rounded-lg border border-border text-sm bg-background min-h-[60px]" />
               <div className="flex justify-end gap-2">
@@ -1056,7 +1071,7 @@ function LeadDetailModal({ lead, allStaff, onClose }: { lead: Lead; allStaff: St
                     data-testid="select-detail-reassign"
                     className="px-2 py-1 rounded-lg text-sm font-medium border border-border bg-background focus:ring-2 focus:ring-primary/20 cursor-pointer"
                   >
-                    {advisors.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+                    {advisors.map(a => <option key={a.id} value={a.id}>{advisorLabel(a)}</option>)}
                   </select>
                 </div>
               </div>

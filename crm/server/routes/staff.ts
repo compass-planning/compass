@@ -12,7 +12,7 @@ import { detectEmailProvider } from "../email/detect-provider";
 import {
   getStaffFromSession, getCompanyId, requireRole,
   redactStaffSensitiveFields, denyHostUsers,
-  verifyStaffInCompany, verifyStaffChildRecordOwnership,
+  verifyStaffInCompany, verifyStaffChildRecordOwnership, getAssignableStaffForClients,
 } from "./middleware";
 
 export const staffRouter = Router();
@@ -60,6 +60,12 @@ staffRouter.get("/api/staff", isAuthenticated, async (req: any, res) => {
       ? members
       : members.map(m => redactStaffSensitiveFields(m as unknown as Record<string, unknown>))
   );
+});
+
+// Who the caller may assign a client to (sales managers: general manager + self + their own advisors).
+staffRouter.get("/api/staff/assignable-advisors", isAuthenticated, denyHostUsers, async (req: any, res) => {
+  const list = await getAssignableStaffForClients(req);
+  res.json(list.map((m: any) => redactStaffSensitiveFields(m as Record<string, unknown>)));
 });
 
 staffRouter.get("/api/staff/:id", isAuthenticated, async (req: any, res) => {
