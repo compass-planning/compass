@@ -363,10 +363,9 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
       </div>
 
       {!isLoading && messages && messages.length > 0 && (
-        <div className="flex items-center gap-3 px-6 py-2 border-b border-border bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500" data-testid="header-message-columns">
-          <span className="flex-1 min-w-0">{isSentFolder ? "To / Subject" : "From / Subject"}</span>
-          <span className="w-36 flex-shrink-0 text-right" data-testid="header-received">{isSentFolder ? "Sent" : "Received"}</span>
-          <span className="w-12 flex-shrink-0" />
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500" data-testid="header-message-columns">
+          <span className="flex-1 min-w-0 truncate">{isSentFolder ? "To / Subject" : "From / Subject"}</span>
+          <span className="flex-shrink-0 whitespace-nowrap" data-testid="header-received">{isSentFolder ? "Sent" : "Received"}</span>
         </div>
       )}
 
@@ -396,39 +395,35 @@ function MessageList({ folderId, folderWellKnown, onSelect, folderName }: { fold
               key={msg.id}
               onClick={() => onSelect(msg)}
               data-testid={`row-message-${msg.id}`}
-              className={`w-full text-left px-6 py-4 border-b border-border/50 hover:bg-muted/30 transition-colors ${
+              className={`block w-full min-w-0 overflow-hidden text-left px-4 py-3 border-b border-border/50 hover:bg-muted/30 transition-colors ${
                 !msg.isRead && !isSentFolder ? "bg-primary/[0.02]" : ""
               }`}
             >
-              <div className="flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    {!msg.isRead && !isSentFolder && (
-                      <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />
-                    )}
-                    <span className={`text-sm truncate ${!msg.isRead && !isSentFolder ? "font-bold text-foreground" : "font-medium text-foreground/80"}`}>
-                      {isSentFolder
-                        ? (msg.toRecipients?.[0]?.name || msg.toRecipients?.[0]?.address || "Unknown")
-                        : (msg.from?.name || msg.from?.address || "Unknown")}
-                    </span>
-                    {isDraftFolder && (
-                      <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Draft</span>
-                    )}
-                  </div>
-                  <p className={`text-sm truncate mb-1 ${!msg.isRead && !isSentFolder ? "font-semibold" : ""}`}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1 min-w-0">
+                  {!msg.isRead && !isSentFolder && (
+                    <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />
+                  )}
+                  <span className={`text-sm truncate flex-1 min-w-0 ${!msg.isRead && !isSentFolder ? "font-bold text-foreground" : "font-medium text-foreground/80"}`}>
+                    {isSentFolder
+                      ? (msg.toRecipients?.[0]?.name || msg.toRecipients?.[0]?.address || "Unknown")
+                      : (msg.from?.name || msg.from?.address || "Unknown")}
+                  </span>
+                  {isDraftFolder && (
+                    <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex-shrink-0">Draft</span>
+                  )}
+                  <span className="text-xs text-slate-600 whitespace-nowrap flex-shrink-0" data-testid={`text-received-${msg.id}`}>
+                    {formatReceived(msg.receivedDateTime || msg.sentDateTime)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 min-w-0 mb-1">
+                  <p className={`text-sm truncate flex-1 min-w-0 ${!msg.isRead && !isSentFolder ? "font-semibold" : ""}`}>
                     {msg.subject || "(No Subject)"}
                   </p>
-                  <p className="text-xs text-slate-500 truncate">{msg.bodyPreview}</p>
+                  {msg.hasAttachments && <Paperclip className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />}
+                  {msg.importance === "high" && <Star className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
                 </div>
-                <div className="w-36 flex-shrink-0 text-right pt-0.5" data-testid={`text-received-${msg.id}`}>
-                  <p className="text-xs text-slate-700 whitespace-nowrap">{formatReceivedDate(msg.receivedDateTime || msg.sentDateTime)}</p>
-                  <p className="text-[11px] text-slate-500 whitespace-nowrap">{formatReceivedTime(msg.receivedDateTime || msg.sentDateTime)}</p>
-                </div>
-                <div className="flex items-center justify-end gap-1 w-12 flex-shrink-0 pt-1">
-                  {msg.hasAttachments && <Paperclip className="w-3.5 h-3.5 text-slate-500" />}
-                  {msg.importance === "high" && <Star className="w-3.5 h-3.5 text-amber-500" />}
-                  <ChevronRight className="w-4 h-4 text-slate-500/50" />
-                </div>
+                <p className="text-xs text-slate-500 truncate">{msg.bodyPreview}</p>
               </div>
             </button>
           ))
@@ -773,6 +768,14 @@ function validDate(dateStr?: string) {
   if (!dateStr) return null;
   const d = new Date(dateStr);
   return isNaN(d.getTime()) ? null : d;
+}
+
+function formatReceived(dateStr?: string) {
+  const d = validDate(dateStr);
+  if (!d) return "";
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return format(d, "h:mm a");
+  return format(d, d.getFullYear() === now.getFullYear() ? "MMM d, h:mm a" : "MMM d, yyyy");
 }
 
 function formatReceivedDate(dateStr?: string) {
