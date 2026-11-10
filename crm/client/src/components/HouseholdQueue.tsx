@@ -7,6 +7,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Search, Plus, Trash2, ChevronUp, ChevronDown, Users } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "@/hooks/use-toast";
+import { useCurrentStaff } from "@/hooks/use-users";
+import { useQuery } from "@tanstack/react-query";
 
 interface Client {
   id: number; firstName: string; lastName: string;
@@ -74,18 +76,21 @@ function tFn(dict: any, key: string): string {
   return typeof cur === "string" ? cur : key;
 }
 
-function HouseholdRow({ c, onSelect, onDelete, onOvReady, keyboardActive }: {
+function HouseholdRow({ c, onSelect, onDelete, onOvReady, keyboardActive, canDelete, showFinancial }: {
   c: Client;
   onSelect: (clientId: number) => void;
   onDelete: (id: number) => void;
   onOvReady?: (id: number, ov: Overview) => void;
   keyboardActive?: boolean;
+  canDelete: boolean;
+  showFinancial: boolean;
 }) {
   const { isFrench: isFr } = useLanguage();
   const [ov, setOv]           = useState<Overview | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
+    if (!showFinancial) return; // office admins / advisor admins don't see financial information
     api.get<Overview>(`/api/crm/clients/${c.id}/overview`).then(data => {
       setOv(data);
       onOvReady?.(c.id, data);
@@ -102,8 +107,13 @@ function HouseholdRow({ c, onSelect, onDelete, onOvReady, keyboardActive }: {
       await api.delete(`/api/crm/clients/${c.id}`);
       onDelete(c.id);
       toast({ title: isFr ? "Client supprimé" : "Client deleted" });
-    } catch {
-      toast({ title: isFr ? "Erreur" : "Error", variant: "destructive" });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "";
+      toast({
+        title: isFr ? "Impossible de supprimer le client" : "Couldn't delete client",
+        description: detail || undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -124,20 +134,26 @@ function HouseholdRow({ c, onSelect, onDelete, onOvReady, keyboardActive }: {
           <p className="text-sm font-semibold text-slate-900 truncate">{c.firstName} {c.lastName}</p>
           {c.email && <p className="text-[11px] text-slate-400 truncate">{c.email}</p>}
         </div>
-        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statusCls}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-          {statusLabel}
-        </div>
+        {showFinancial && (
+          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statusCls}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+            {statusLabel}
+          </div>
+        )}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={e => { e.stopPropagation(); setExpanded(x => !x); }}
-            className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-          >
-            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-          <button onClick={handleDelete} className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50">
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {showFinancial && (
+            <button
+              onClick={e => { e.stopPropagation(); setExpanded(x => !x); }}
+              className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            >
+              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          )}
+          {canDelete && (
+            <button onClick={handleDelete} data-testid={`button-delete-client-${c.id}`} title={isFr ? "Supprimer" : "Delete client"} className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
       {expanded && ov && (
@@ -175,6 +191,16 @@ export function HouseholdQueue({ onSelect }: Props) {
   const [overviews, setOverviews] = useState<Record<number, Overview>>({});
   const [showAdd, setShowAdd]     = useState(false);
   const [kbIndex, setKbIndex]     = useState(-1);
+  const { data: me } = useCurrentStaff();
+  const isGM = me?.role === "general_manager";
+  const showFinancial = !!me && me.role !== "office_admin" && me.role !== "advisor_admin";
+  // The same "who can I assign to" list the server enforces (GM/office admin: anyone; sales manager: GM + self + own team; advisor: self).
+  const { data: assignable = [] } = useQuery<{ id: number; firstName: string; lastName: string; role: string }[]>({ queryKey: ["/api/crm/staff/assignable-advisors"] });
+  const [assignTo, setAssignTo] = useState<string>("");
+  useEffect(() => {
+    // Default to the person adding the client (office admins start unassigned).
+    if (me && assignTo === "" && me.role !== "office_admin" && assignable.some(a => a.id === me.id)) setAssignTo(String(me.id));
+  }, [me, assignable]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // New client form
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", province: "" });
@@ -204,12 +230,16 @@ export function HouseholdQueue({ onSelect }: Props) {
   const handleAdd = async () => {
     if (!form.firstName || !form.lastName) return;
     try {
-      await api.post("/api/crm/clients", form);
+      await api.post("/api/crm/clients", { ...form, advisorId: assignTo ? Number(assignTo) : null });
       setForm({ firstName: "", lastName: "", email: "", phone: "", province: "" });
       setShowAdd(false);
       load();
-    } catch {
-      toast({ title: isFr ? "Erreur lors de l'ajout" : "Error adding client", variant: "destructive" });
+    } catch (err) {
+      toast({
+        title: isFr ? "Erreur lors de l'ajout" : "Error adding client",
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -247,6 +277,24 @@ export function HouseholdQueue({ onSelect }: Props) {
               <input placeholder={t("client.phone")} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                 className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-400/30" />
             </div>
+            {assignable.length > 0 && (
+              <label className="flex items-center gap-2 text-xs text-slate-600">
+                <span className="font-semibold whitespace-nowrap">{isFr ? "Assigner à" : "Assign to"}</span>
+                <select
+                  value={assignTo}
+                  onChange={e => setAssignTo(e.target.value)}
+                  data-testid="select-new-client-assignee"
+                  className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/30"
+                >
+                  {me?.role === "advisor" ? null : <option value="">{isFr ? "Non assigné" : "Unassigned"}</option>}
+                  {assignable.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.firstName} {a.lastName}{a.id === me?.id ? (isFr ? " (moi)" : " (me)") : a.role === "general_manager" ? " (General Manager)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="flex gap-2">
               <button onClick={handleAdd} className="px-3 py-1.5 bg-[#5b21b6] text-white text-xs font-semibold rounded-lg">{t("action.add")}</button>
               <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg">{t("action.cancel")}</button>
@@ -296,6 +344,8 @@ export function HouseholdQueue({ onSelect }: Props) {
               key={c.id}
               c={c}
               onSelect={onSelect}
+              canDelete={isGM}
+              showFinancial={showFinancial}
               onDelete={id => setClients(cs => cs.filter(x => x.id !== id))}
               onOvReady={(id, ov) => setOverviews(o => ({ ...o, [id]: ov }))}
               keyboardActive={kbIndex === i}

@@ -26,6 +26,31 @@ ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS percentile_10 numeric(15,2);
 ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS percentile_90 numeric(15,2);
 ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS paths jsonb;
 CREATE INDEX IF NOT EXISTS email_audit_logs_company_idx ON email_audit_logs (company_id, id);
+
+CREATE TABLE IF NOT EXISTS zoom_accounts (
+  id serial PRIMARY KEY NOT NULL,
+  company_id integer,
+  staff_id integer NOT NULL UNIQUE,
+  zoom_user_id text NOT NULL,
+  zoom_email text,
+  status text NOT NULL DEFAULT 'connected',
+  granted_scopes text[] NOT NULL DEFAULT '{}',
+  connected_at timestamptz NOT NULL DEFAULT now(),
+  disconnected_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS zoom_accounts_company_idx ON zoom_accounts (company_id);
+CREATE INDEX IF NOT EXISTS zoom_accounts_zoom_user_idx ON zoom_accounts (zoom_user_id);
+CREATE TABLE IF NOT EXISTS zoom_oauth_tokens (
+  id serial PRIMARY KEY NOT NULL,
+  account_id integer NOT NULL UNIQUE,
+  encrypted_access_token text NOT NULL,
+  encrypted_refresh_token text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  encryption_key_version text NOT NULL DEFAULT 'v1',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS scenario_comparisons (
   id serial PRIMARY KEY NOT NULL,
   client_id integer NOT NULL,

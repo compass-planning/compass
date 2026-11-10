@@ -9,6 +9,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./auth";
 import { registerOutlookRoutes } from "./outlook-routes";
 import { registerBotRoutes } from "./teams-bot/bot-routes";
 import { registerEmailRoutes } from "./email/email-routes";
+import { registerZoomRoutes } from "./zoom/zoom-routes";
 import { companies, hostUsers, hostStaff } from "@shared/schema";
 import { enforcePasswordChanged, denyHostUsers, getStaffFromSession } from "./routes/middleware";
 import { registerMfaRoutes } from "./auth/mfa-routes";
@@ -56,6 +57,7 @@ export async function registerRoutes(
   registerOutlookRoutes(app);
   registerBotRoutes(app);
   registerEmailRoutes(app);
+  registerZoomRoutes(app);
 
   app.use("/api", enforcePasswordChanged);
   app.use("/api/staff",    isAuthenticated, denyHostUsers);

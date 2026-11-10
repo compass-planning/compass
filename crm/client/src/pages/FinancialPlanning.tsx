@@ -1,6 +1,7 @@
 import { useSearch, useLocation, useParams } from "wouter";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useClients } from "@/hooks/use-clients";
+import { useCurrentStaff } from "@/hooks/use-users";
 import { AppLayout } from "@/components/AppLayout";
 import { GoalsTab }    from "@/pages/GoalsTab";
 import { PensionTab }  from "@/pages/PensionTab";
@@ -3436,7 +3437,14 @@ const { data: plans = [] } = useClientPlans(selectedClientId ?? 0);
 export default function FinancialPlanning() {
   const { isFrench: isFr } = useLanguage();
   const tabs = getTabs(isFr);
-  const navStructure = getNavStructure(isFr);
+  // Office admins and advisor admins never see financial information (the server enforces it too):
+  // they only get the client profile and activity tools.
+  const { data: meStaff } = useCurrentStaff();
+  const canSeeFinancial = !!meStaff && meStaff.role !== "office_admin" && meStaff.role !== "advisor_admin";
+  const NON_FINANCIAL_KEYS = new Set<TabKey>(["profile", "record_meeting", "log_activity", "past_meetings"]);
+  const navStructure = getNavStructure(isFr)
+    .map(e => e.type === "group" ? { ...e, items: e.items.filter(it => canSeeFinancial || NON_FINANCIAL_KEYS.has(it.key)) } : e)
+    .filter(e => e.type === "group" ? e.items.length > 0 : canSeeFinancial || NON_FINANCIAL_KEYS.has(e.key));
   const searchString = useSearch();
   const [, navigate] = useLocation();
   const routeParams = useParams<{ id?: string }>();
@@ -3453,6 +3461,9 @@ export default function FinancialPlanning() {
   const [pickerOpen, setPickerOpen]   = useState(!urlClientId);
 
   const { data: clients = [], isLoading } = useClients();
+  useEffect(() => {
+    if (meStaff && !canSeeFinancial && !NON_FINANCIAL_KEYS.has(activeTab)) setActiveTab("profile");
+  }, [meStaff, canSeeFinancial, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectedClient = (clients as any[]).find((c: any) => c.id === selectedId);
   const filtered = (clients as any[]).filter((c: any) =>
     `${c.firstName} ${c.lastName}`.toLowerCase().includes(clientSearch.toLowerCase())
@@ -3530,7 +3541,7 @@ export default function FinancialPlanning() {
                   </button>
                 )
               )}
-              {ungroupedTabs.length > 0 && (
+              {canSeeFinancial && ungroupedTabs.length > 0 && (
                 <div className="pt-2 mt-2 border-t border-white/10 space-y-0.5">
                   {ungroupedTabs.map(t => tabBtn(t.key))}
                 </div>

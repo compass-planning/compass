@@ -43,7 +43,7 @@ export function AppLayout({ children, sidebarOverride, noPadding, workspaceMode 
     { href: "/pipeline", label: t("nav.pipeline"), icon: TrendingUp, moduleKey: "modulePipeline" },
     { href: "/tasks", label: t("nav.tasks"), icon: CheckSquare },
     { href: "/clients", label: t("nav.clients"), icon: Users },
-    { href: "/financial-planning", label: t("nav.financialPlanning"), icon: LineChart, moduleKey: "moduleFinancialPlanning" },
+    { href: "/financial-planning", label: t("nav.financialPlanning"), icon: LineChart, roles: ["general_manager", "sales_manager", "advisor"], moduleKey: "moduleFinancialPlanning" },
     { href: "/users", label: t("nav.team"), icon: UserCog, roles: ["general_manager", "office_admin", "sales_manager", "advisor_admin"] },
     { href: "/analytics", label: t("nav.analytics"), icon: PieChart, roles: ["general_manager", "sales_manager"], moduleKey: "moduleAnalytics" },
     { href: "/email", label: t("nav.email"), icon: Mail, moduleKey: "moduleEmail" },

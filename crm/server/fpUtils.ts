@@ -9,7 +9,8 @@
 
 import { db } from "./db";
 import { clients, financialPlans, staff } from "@shared/schema";
-import { and, eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { canAccessClient, canViewFinancial } from "./access";
 
 // Numeric columns: coerce empty string → "0" rather than null.
 const ZERO_FIELDS = new Set([
@@ -50,9 +51,8 @@ export function safe(body: any): Record<string, unknown> {
 
 /**
  * Returns true if the staff member (staffId) can access the given client.
- * Access granted when:
- *   - client.advisorId === staffId, OR
- *   - staff is a manager/admin in the same company as the client
+ * Financial access: same company AND within the role's client scope (see server/access.ts),
+ * and the role must be allowed to see financial information at all.
  *
  * Fails closed: a falsy/missing staffId or clientId can never match. This
  * matters because route handlers read staffId from req.userId — if that is
@@ -60,28 +60,13 @@ export function safe(body: any): Record<string, unknown> {
  */
 export async function ownsClient(clientId: number, staffId: number): Promise<boolean> {
   if (!staffId || !clientId) return false;
-
-  const [member] = await db
-    .select({ companyId: staff.companyId, role: staff.role })
-    .from(staff)
-    .where(eq(staff.id, staffId));
-
+  const [member] = await db.select().from(staff).where(eq(staff.id, staffId));
   if (!member) return false;
-
-  const managerRoles = ["general_manager", "advisor_admin", "sales_manager", "office_admin"];
-  const isManager = managerRoles.includes(member.role);
-
-  const conditions: any[] = [eq(clients.advisorId, staffId)];
-  if (isManager && member.companyId) {
-    conditions.push(eq(clients.companyId, member.companyId));
-  }
-
-  const [c] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), or(...conditions)));
-
-  return !!c;
+  // Financial information: office admins and advisor admins never see it.
+  if (!canViewFinancial(member.role)) return false;
+  const [c] = await db.select().from(clients).where(eq(clients.id, clientId));
+  // Company isolation + role scope (GM all; sales manager own team; advisor own clients).
+  return canAccessClient(member, c);
 }
 
 /**

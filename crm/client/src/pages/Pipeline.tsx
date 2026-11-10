@@ -21,11 +21,9 @@ import { useWindowManager } from "@/contexts/WindowManagerContext";
 const advisorLabel = (a: StaffMember) => `${a.firstName} ${a.lastName}${a.role === "general_manager" ? " (General Manager)" : ""}`;
 
 function useAdvisorChoices(allStaff: StaffMember[]): StaffMember[] {
-  const { data: me } = useCurrentStaff();
-  const isSM = me?.role === "sales_manager";
-  const { data: assignable } = useQuery<StaffMember[]>({ queryKey: ["/api/crm/staff/assignable-advisors"], enabled: isSM });
-  if (isSM) return assignable ?? [];
-  return allStaff.filter(u => ["advisor", "advisor_admin", "sales_manager"].includes(u.role));
+  // One server-driven "who can I assign to" list for every role (clients, tasks and deals share it).
+  const { data: assignable } = useQuery<StaffMember[]>({ queryKey: ["/api/crm/staff/assignable-advisors"] });
+  return assignable ?? [];
 }
 
 function getStageConfig(isFr: boolean) {
@@ -627,8 +625,15 @@ function CreateLeadModal({ allStaff, onClose }: { allStaff: StaffMember[]; onClo
     source: "",
     productInterest: "",
     notes: "",
-    advisorId: advisors.length > 0 ? advisors[0].id : (null as number | null),
+    advisorId: null as number | null,
   });
+  // Default new deals to the person creating them (not whoever happens to be first in the list).
+  const { data: meForDefault } = useCurrentStaff();
+  useEffect(() => {
+    if (formData.advisorId == null && meForDefault && advisors.some(a => a.id === meForDefault.id)) {
+      setFormData(f => ({ ...f, advisorId: meForDefault.id }));
+    }
+  }, [meForDefault, advisors]); // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {

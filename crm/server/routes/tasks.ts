@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
 import { insertTaskSchema } from "@shared/schema";
 import { getStaffFromSession } from "./middleware";
+import { getAssignableStaff } from "../access";
 
 export const tasksRouter = Router();
 
@@ -40,6 +41,10 @@ tasksRouter.post("/", isAuthenticated, async (req: any, res) => {
         return res
           .status(400)
           .json({ message: "Assignee must be a member of your company" });
+      }
+      // Same "who can I assign to" list as clients and pipeline deals (server/access.ts).
+      if (!(await getAssignableStaff(currentStaff)).some(m => m.id === input.assignedToStaffId)) {
+        return res.status(400).json({ message: "You can't assign a task to that person" });
       }
     }
     if (input.clientId && input.leadId) {
@@ -149,6 +154,10 @@ tasksRouter.put("/:id", isAuthenticated, async (req: any, res) => {
         return res
           .status(400)
           .json({ message: "Assignee must be a member of your company" });
+      }
+      // Same "who can I assign to" list as clients and pipeline deals (server/access.ts).
+      if (input.assignedToStaffId !== task.assignedToStaffId && !(await getAssignableStaff(currentStaff)).some(m => m.id === input.assignedToStaffId)) {
+        return res.status(400).json({ message: "You can't assign a task to that person" });
       }
     }
 

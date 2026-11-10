@@ -7,6 +7,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Carrier, StaffMember } from "@shared/schema";
 import { useCarrierCredentials, useCreateCarrierCredential, useDeleteCarrierCredential } from "@/hooks/use-carrier-files";
 import { EmailAccountSection } from "@/components/EmailSetupModal";
+import { ZoomAccountSection } from "@/components/ZoomAccountSection";
 
 const COMMON_TIMEZONES = [
   { value: "America/St_Johns", label: "Newfoundland (NST/NDT)" },
@@ -157,6 +158,8 @@ export default function SettingsPage() {
         </div>
 
         <EmailAccountSection />
+
+        <ZoomAccountSection />
 
         <ChangePasswordSection />
 

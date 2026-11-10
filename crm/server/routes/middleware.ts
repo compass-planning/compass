@@ -9,6 +9,7 @@ import {
   retirementProjections, insuranceAnalyses, planActionItems, planAssumptions,
   staff, staffDocuments, staffChildren,
 } from "@shared/schema";
+import { canAccessClient, canViewFinancial, getAssignableStaff } from "../access";
 
 // ── Session helpers ──────────────────────────────────────────────────────────
 
@@ -48,14 +49,20 @@ export const denyHostUsers = async (req: any, res: Response, next: NextFunction)
 export async function verifyClientOwnership(
   req: any, res: Response, clientId: number
 ): Promise<boolean> {
-  const companyId = await getCompanyId(req);
-  if (!companyId) { res.status(403).json({ message: "Access denied" }); return false; }
+  const member = await getStaffFromSession(req);
+  if (!member?.companyId) { res.status(403).json({ message: "Access denied" }); return false; }
   const client = await storage.getClient(clientId);
-  if (!client || client.companyId !== companyId) {
+  // Company isolation + the caller's role scope (own team / own clients). Same 403 either way.
+  if (!client || !(await canAccessClient(member, client))) {
     res.status(403).json({ message: "Access denied" }); return false;
   }
   return true;
 }
+
+const FINANCIAL_TABLES = new Set<unknown>([
+  educationSavings, debtEntries, taxPlanningNotes, estatePlanningNotes, estateAnalyses, cashFlowBudgets,
+  aiRecommendations, products, financialPlans, netWorthEntries, retirementProjections, insuranceAnalyses,
+]);
 
 export async function verifyFpRecordOwnership(
   req: any,
@@ -67,13 +74,17 @@ export async function verifyFpRecordOwnership(
     | typeof retirementProjections | typeof insuranceAnalyses,
   recordId: number
 ): Promise<boolean> {
-  const companyId = await getCompanyId(req);
-  if (!companyId) { res.status(403).json({ message: "Access denied" }); return false; }
+  const member = await getStaffFromSession(req);
+  if (!member?.companyId) { res.status(403).json({ message: "Access denied" }); return false; }
   const [record] = await db.select({ clientId: table.clientId }).from(table).where(eq(table.id, recordId));
   if (!record) { res.status(404).json({ message: "Record not found" }); return false; }
   const client = await storage.getClient(record.clientId);
-  if (!client || client.companyId !== companyId) {
+  if (!client || !(await canAccessClient(member, client))) {
     res.status(403).json({ message: "Access denied" }); return false;
+  }
+  // Non-financial client records (profile data) stay open to every role that can see the client.
+  if (FINANCIAL_TABLES.has(table as unknown) && !canViewFinancial(member.role)) {
+    res.status(403).json({ message: "Your role cannot view financial information" }); return false;
   }
   return true;
 }
@@ -84,14 +95,15 @@ export async function verifyPlanChildOwnership(
   table: typeof planActionItems | typeof planAssumptions,
   recordId: number
 ): Promise<boolean> {
-  const companyId = await getCompanyId(req);
-  if (!companyId) { res.status(403).json({ message: "Access denied" }); return false; }
+  const member = await getStaffFromSession(req);
+  if (!member?.companyId) { res.status(403).json({ message: "Access denied" }); return false; }
+  if (!canViewFinancial(member.role)) { res.status(403).json({ message: "Your role cannot view financial information" }); return false; }
   const [record] = await db.select({ planId: table.planId }).from(table).where(eq(table.id, recordId));
   if (!record) { res.status(404).json({ message: "Record not found" }); return false; }
   const [plan] = await db.select({ clientId: financialPlans.clientId }).from(financialPlans).where(eq(financialPlans.id, record.planId));
   if (!plan) { res.status(404).json({ message: "Plan not found" }); return false; }
   const client = await storage.getClient(plan.clientId);
-  if (!client || client.companyId !== companyId) {
+  if (!client || !(await canAccessClient(member, client))) {
     res.status(403).json({ message: "Access denied" }); return false;
   }
   return true;
@@ -104,13 +116,8 @@ export async function verifyPlanChildOwnership(
  * Always limited to the caller's company.
  */
 export async function getAssignableStaffForClients(req: any): Promise<any[]> {
-  const companyId = await getCompanyId(req);
   const caller = await getStaffFromSession(req);
-  if (!companyId || !caller) return [];
-  const members = (await storage.getStaffMembers(companyId)).filter((m: any) => m.isActive !== false);
-  if (caller.role !== "sales_manager") return members;
-  const team = new Set((await storage.getAdvisorsByAdmin(caller.id)).map((a: any) => a.id));
-  return members.filter((m: any) => m.role === "general_manager" || m.id === caller.id || team.has(m.id));
+  return caller ? getAssignableStaff(caller) : [];
 }
 
 /** Rejects (404) an advisorId the caller is not allowed to assign a client to. null/undefined is always fine. */

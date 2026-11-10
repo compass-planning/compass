@@ -856,15 +856,11 @@ function ContactInfoCard({ client, spouse }: { client: Client; spouse: Client | 
 function EditClientModal({ client, allClients, onClose }: { client: Client; allClients: Client[]; onClose: () => void }) {
   const { data: allStaff } = useStaffMembers();
   const { data: currentStaff } = useCurrentStaff();
-  // Sales managers can assign to the general manager and their own advisors; the server decides who.
-  const isSalesManager = currentStaff?.role === "sales_manager";
-  const { data: assignable } = useQuery<StaffMember[]>({
-    queryKey: ["/api/crm/staff/assignable-advisors"],
-    enabled: isSalesManager,
-  });
-  const advisors = isSalesManager
-    ? (assignable ?? [])
-    : (allStaff?.filter(u => u.role === "advisor") ?? []);
+  // Everyone gets the same server-driven list of who they may assign this client to
+  // (GM / office admin: anyone; sales manager: GM + self + own team; advisor admin: their team; advisor: self).
+  const { data: assignable } = useQuery<StaffMember[]>({ queryKey: ["/api/crm/staff/assignable-advisors"] });
+  const advisors = assignable ?? [];
+  const currentAssignee = client.advisorId ? allStaff?.find(u => u.id === client.advisorId) : undefined;
   const potentialSpouses = allClients.filter(c => c.id !== client.id);
   const updateClient = useUpdateClient();
   const [showCreateSpouse, setShowCreateSpouse] = useState(false);
@@ -1042,9 +1038,12 @@ function EditClientModal({ client, allClients, onClose }: { client: Client; allC
               )}
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Assigned Advisor</label>
+              <label className="text-sm font-semibold text-foreground">Assigned To</label>
               <select value={formData.advisorId ?? ""} onChange={e => setFormData({...formData, advisorId: e.target.value ? Number(e.target.value) : null})} data-testid="select-edit-advisor" className="w-full px-4 py-3 rounded-xl border border-border focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400 transition-colors bg-background">
-                <option value="">No advisor assigned</option>
+                {currentStaff?.role !== "advisor" && <option value="">No advisor assigned</option>}
+                {currentAssignee && !advisors.some(a => a.id === currentAssignee.id) && (
+                  <option value={currentAssignee.id}>{currentAssignee.firstName} {currentAssignee.lastName}</option>
+                )}
                 {advisors.map(a => (
                   <option key={a.id} value={a.id}>
                     {a.firstName} {a.lastName}{a.role === "general_manager" ? " (General Manager)" : a.id === currentStaff?.id ? " (me)" : ""}

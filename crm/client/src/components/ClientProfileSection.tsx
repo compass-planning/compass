@@ -20,6 +20,7 @@ import { useUpdateClient } from "@/hooks/use-clients";
 import { InlineEdit } from "@/components/ui/InlineEdit";
 import { toast } from "@/hooks/use-toast";
 import { fmt$ } from "@/lib/utils";
+import { useCurrentStaff } from "@/hooks/use-users";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -173,6 +174,9 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
   client: Record<string, unknown>;
   onClientUpdate?: (updated: Record<string, unknown>) => void;
 }) {
+  const { data: meStaff } = useCurrentStaff();
+  // Office admins / advisor admins never see dollar figures (server redacts them too).
+  const canSeeFinancial = !!meStaff && meStaff.role !== "office_admin" && meStaff.role !== "advisor_admin";
   const qc = useQueryClient();
   const _updateClient = useUpdateClient();
 
@@ -357,11 +361,15 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
                 <FieldSelect label="Province" value={form.province ?? "ON"} onChange={v => u("province", v)}
                   options={PROVINCES.map(p => ({ value: p, label: p }))} />
                 <FieldInput label="Occupation"  value={form.occupation ?? ""}  onChange={v => u("occupation", v)} />
-                <FieldInput label="Annual Income ($)" type="number" value={form.annualIncome ?? ""} onChange={v => u("annualIncome", v)} />
+                {canSeeFinancial && (
+                  <FieldInput label="Annual Income ($)" type="number" value={form.annualIncome ?? ""} onChange={v => u("annualIncome", v)} />
+                )}
                 <FieldSelect label="Marital Status" value={form.maritalStatus ?? ""} onChange={v => u("maritalStatus", v)} options={MARITAL_STATUSES} />
                 <FieldSelect label="Pension Type" value={form.pensionPlan ?? ""} onChange={v => u("pensionPlan", v)} options={PENSION_TYPES} />
                 <FieldInput label="Retirement Age" type="number" value={String(form.retirementAge ?? "")} onChange={v => u("retirementAge", v ? +v : null)} />
-                <FieldInput label="Desired Retirement Income ($)" type="number" value={form.desiredRetirementIncome ?? ""} onChange={v => u("desiredRetirementIncome", v)} />
+                {canSeeFinancial && (
+                  <FieldInput label="Desired Retirement Income ($)" type="number" value={form.desiredRetirementIncome ?? ""} onChange={v => u("desiredRetirementIncome", v)} />
+                )}
               </div>
             }
             viewContent={
@@ -375,11 +383,15 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
                 <ExecField label="Postal Code"       value={client.postalCode}                        onSave={v => inlinePatch({ postalCode: v })} />
                 <ExecField label="Province"          value={client.province}                          onSave={v => inlinePatch({ province: v })} />
                 <ExecField label="Occupation"        value={client.occupation}                        onSave={v => inlinePatch({ occupation: v })} />
-                <ExecField label="Annual Income"     value={fmt$(client.annualIncome)}       mono     onSave={v => inlinePatch({ annualIncome: v })} type="number" />
+                {canSeeFinancial && (
+                  <ExecField label="Annual Income"     value={fmt$(client.annualIncome)}       mono     onSave={v => inlinePatch({ annualIncome: v })} type="number" />
+                )}
                 <ExecField label="Marital Status"    value={MARITAL_STATUSES.find(m => m.value === client.maritalStatus)?.label ?? client.maritalStatus} />
                 <ExecField label="Pension Type"      value={PENSION_TYPES.find(p => p.value === client.pensionPlan)?.label ?? client.pensionPlan} />
                 <ExecField label="Retirement Age"    value={client.retirementAge}             mono    onSave={v => inlinePatch({ retirementAge: +v })} type="number" />
-                <ExecField label="Desired Income"    value={fmt$(client.desiredRetirementIncome)} mono onSave={v => inlinePatch({ desiredRetirementIncome: v })} type="number" />
+                {canSeeFinancial && (
+                  <ExecField label="Desired Income"    value={fmt$(client.desiredRetirementIncome)} mono onSave={v => inlinePatch({ desiredRetirementIncome: v })} type="number" />
+                )}
                 <ExecField label="Notes"             value={client.notes}                             onSave={v => inlinePatch({ notes: v })} />
               </dl>
             }
@@ -405,9 +417,13 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
                   <FieldInput label="Spouse City" value={form.spouseCity ?? ""} onChange={v => u("spouseCity", v)} />
                   <FieldInput label="Spouse Postal Code" value={form.spousePostalCode ?? ""} onChange={v => u("spousePostalCode", v)} />
                   <FieldInput label="Spouse Occupation" value={form.spouseOccupation ?? ""} onChange={v => u("spouseOccupation", v)} />
-                  <FieldInput label="Spouse Income ($)" type="number" value={form.spouseAnnualIncome ?? ""} onChange={v => u("spouseAnnualIncome", v)} />
+                  {canSeeFinancial && (
+                    <FieldInput label="Spouse Income ($)" type="number" value={form.spouseAnnualIncome ?? ""} onChange={v => u("spouseAnnualIncome", v)} />
+                  )}
                   <FieldInput label="Spouse Retirement Age" type="number" value={String(form.spouseRetirementAge ?? "")} onChange={v => u("spouseRetirementAge", v ? +v : null)} />
-                  <FieldInput label="Spouse Desired Income ($)" type="number" value={form.spouseDesiredRetirementIncome ?? ""} onChange={v => u("spouseDesiredRetirementIncome", v)} />
+                  {canSeeFinancial && (
+                    <FieldInput label="Spouse Desired Income ($)" type="number" value={form.spouseDesiredRetirementIncome ?? ""} onChange={v => u("spouseDesiredRetirementIncome", v)} />
+                  )}
                   <FieldSelect label="Spouse Pension" value={form.spousePensionType ?? ""} onChange={v => u("spousePensionType", v)} options={PENSION_TYPES} />
                 </div>
               }
@@ -420,10 +436,14 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
                   <ExecField label="City"          value={client.spouseCity}                              onSave={v => inlinePatch({ spouseCity: v })} />
                   <ExecField label="Postal Code"   value={client.spousePostalCode}                        onSave={v => inlinePatch({ spousePostalCode: v })} />
                   <ExecField label="Occupation"    value={client.spouseOccupation}                        onSave={v => inlinePatch({ spouseOccupation: v })} />
-                  <ExecField label="Annual Income" value={fmt$(client.spouseAnnualIncome)}      mono       onSave={v => inlinePatch({ spouseAnnualIncome: v })} type="number" />
+                  {canSeeFinancial && (
+                    <ExecField label="Annual Income" value={fmt$(client.spouseAnnualIncome)}      mono       onSave={v => inlinePatch({ spouseAnnualIncome: v })} type="number" />
+                  )}
                   <ExecField label="Pension"       value={PENSION_TYPES.find(p => p.value === client.spousePensionType)?.label ?? client.spousePensionType} />
                   <ExecField label="Retirement Age" value={client.spouseRetirementAge}          mono       onSave={v => inlinePatch({ spouseRetirementAge: +v })} type="number" />
-                  <ExecField label="Desired Income" value={fmt$(client.spouseDesiredRetirementIncome)} mono onSave={v => inlinePatch({ spouseDesiredRetirementIncome: v })} type="number" />
+                  {canSeeFinancial && (
+                    <ExecField label="Desired Income" value={fmt$(client.spouseDesiredRetirementIncome)} mono onSave={v => inlinePatch({ spouseDesiredRetirementIncome: v })} type="number" />
+                  )}
                 </dl>
               }
             />

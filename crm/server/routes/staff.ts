@@ -1,3 +1,4 @@
+import { redactClientForRole } from "../access";
 import { Router } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -320,7 +321,7 @@ staffRouter.get("/api/staff/:advisorId/clients", isAuthenticated, async (req: an
     return res.status(403).json({ message: "Forbidden" });
   }
   const clients = await storage.getClientsByAdvisor(advisorId);
-  res.json(clients);
+  res.json(clients.map(c => redactClientForRole(caller.role, c)));
 });
 
 staffRouter.get("/api/staff/:advisorId/clients-by-type", isAuthenticated, async (req: any, res) => {
@@ -526,8 +527,13 @@ staffRouter.post(
         return res.status(400).json({ message: "Manager must be an Advisor Admin or Sales Manager", field: "adminId" });
       }
       const teamMember = await storage.getStaffMember(input.advisorId);
-      if (!teamMember || teamMember.role !== "advisor") {
-        return res.status(400).json({ message: "Assigned member must be an advisor", field: "advisorId" });
+      // Sales managers' teams are advisors and advisor admins; an advisor admin's team is advisors.
+      const allowedMembers = manager.role === "sales_manager" ? ["advisor", "advisor_admin"] : ["advisor"];
+      if (!teamMember || !allowedMembers.includes(teamMember.role)) {
+        return res.status(400).json({
+          message: manager.role === "sales_manager" ? "Assigned member must be an advisor or advisor admin" : "Assigned member must be an advisor",
+          field: "advisorId",
+        });
       }
 
       const assignment = await storage.createAdvisorAssignment(input);

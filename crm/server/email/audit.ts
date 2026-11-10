@@ -10,7 +10,9 @@ export type EmailAuditAction =
   | "message.delete"
   | "attachment.download"
   | "account.connect"
-  | "account.disconnect";
+  | "account.disconnect"
+  | "zoom.connect"
+  | "zoom.disconnect";
 
 export interface EmailAuditEntry {
   companyId: number | null;

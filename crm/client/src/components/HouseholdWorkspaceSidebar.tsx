@@ -12,6 +12,7 @@ import {
   TrendingUp, ChevronDown, ChevronRight, AlertTriangle,
   Brain, Receipt, Scale, CheckSquare, ScrollText, UserCircle,
 } from "lucide-react";
+import { useCurrentStaff } from "@/hooks/use-users";
 import { useQuery } from "@tanstack/react-query";
 
 interface Client {
@@ -151,7 +152,11 @@ export function HouseholdWorkspaceSidebar({ client, activeSection, onSectionChan
   const { t: _tObj } = useLanguage();
   const t = (key: string) => tFn(_tObj as any, key);
 
+  const { data: me } = useCurrentStaff();
+  // Office admins and advisor admins never see financial information (the server enforces it too).
+  const showFinancial = !!me && me.role !== "office_admin" && me.role !== "advisor_admin";
   const { data: overview } = useQuery<Overview>({
+    enabled: showFinancial,
     queryKey: ["overview", client.id],
     queryFn: async () => {
       const r = await fetch(`/api/crm/clients/${client.id}/overview`);
@@ -169,7 +174,7 @@ export function HouseholdWorkspaceSidebar({ client, activeSection, onSectionChan
   if (!overview?.insuranceAnalyses) alerts.push(t("household.noInsurance"));
   if ((overview?.pendingAi ?? 0) > 0) alerts.push(`${overview?.pendingAi ?? 0} ${t("household.aiPending")}`);
 
-  const navSections = [
+  const allNavSections = [
     {
       label: t("household.financialPlan"),
       icon: Brain, color: "text-violet-600", bg: "bg-violet-50",
@@ -217,6 +222,12 @@ export function HouseholdWorkspaceSidebar({ client, activeSection, onSectionChan
       ],
     },
   ];
+
+  const navSections = showFinancial
+    ? allNavSections
+    : allNavSections
+        .slice(3) // drop Financial Plan, Protection, Estate & Tax
+        .map(sec => ({ ...sec, items: sec.items.filter(it => it.key !== "documents.policies") }));
 
   return (
     <div className="flex flex-col h-full overflow-hidden">

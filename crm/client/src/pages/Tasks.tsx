@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { AppLayout } from "@/components/AppLayout";
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from "@/hooks/use-tasks";
@@ -674,6 +675,13 @@ function TaskFormModal({ task, allStaff, onClose, currentStaffId }: {
   const { data: clientsList } = useClients();
   const { data: leadsList } = useLeads();
   const isEditing = !!task;
+  // Same server-driven "who can I assign to" list as clients and pipeline deals.
+  const { data: assignable } = useQuery<StaffMember[]>({ queryKey: ["/api/crm/staff/assignable-advisors"] });
+  const assigneeChoices = [
+    ...(assignable ?? []),
+    ...(task?.assignedToStaffId && !(assignable ?? []).some(a => a.id === task.assignedToStaffId)
+      ? allStaff.filter(s => s.id === task.assignedToStaffId) : []),
+  ];
 
   const [linkType, setLinkType] = useState<"none" | "client" | "lead">(
     task?.clientId ? "client" : task?.leadId ? "lead" : "none"
@@ -866,7 +874,7 @@ function TaskFormModal({ task, allStaff, onClose, currentStaffId }: {
                 className="w-full px-4 py-2.5 rounded-xl border border-border focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400 bg-background"
               >
                 <option value="">No one (self)</option>
-                {allStaff.map(s => (
+                {assigneeChoices.map(s => (
                   <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
                 ))}
               </select>

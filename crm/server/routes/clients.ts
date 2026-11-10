@@ -6,6 +6,8 @@ import { eq, inArray } from "drizzle-orm";
 import { api } from "@shared/routes";
 import { children, documents, activities, insertClientSchema, advisorAssignments } from "@shared/schema";
 import { isAuthenticated } from "../auth";
+import { getVisibleClients, canDeleteClients, canViewFinancial, redactClientForRole, stripFinancialClientFields } from "../access";
+import { deleteClientCascade } from "../clientDelete";
 import {
   getStaffFromSession, getCompanyId, denyHostUsers,
   verifyClientOwnership, verifyFpRecordOwnership, validateClientAdvisorAssignment,
@@ -24,49 +26,9 @@ clientsRouter.get("/api/clients", isAuthenticated, async (req: any, res) => {
     return res.json(await storage.getClients(companyId));
   }
 
-  const { role, id } = currentStaff;
-
-  // General Manager & Office Admin — full company visibility
-  if (role === "general_manager" || role === "office_admin") {
-    return res.json(await storage.getClients(companyId));
-  }
-
-  // Sales Manager — own clients + all directly assigned advisors' clients
-  if (role === "sales_manager") {
-    const assignedAdvisors = await storage.getAdvisorsByAdmin(id);
-    const visibleIds = [id, ...assignedAdvisors.map((a: any) => a.id)];
-    return res.json(await storage.getClientsByAdvisors(visibleIds));
-  }
-
-  // Advisor (Sales Rep) — only their own clients
-  // Includes clients assigned to them by a manager (advisorId = their id)
-  if (role === "advisor") {
-    return res.json(await storage.getClientsByAdvisor(id));
-  }
-
-  // Advisor Admin (Sales Admin) — their own advisors' clients
-  // PLUS the full purview of the Sales Manager(s) they report to
-  if (role === "advisor_admin") {
-    const myAdvisors = await storage.getAdvisorsByAdmin(id);
-    const visibleIds = new Set<number>([id, ...myAdvisors.map((a: any) => a.id)]);
-
-    // Find the Sales Manager(s) they report to via advisorAssignments
-    const myManagerRows = await db
-      .select()
-      .from(advisorAssignments)
-      .where(eq(advisorAssignments.advisorId, id));
-
-    for (const row of myManagerRows) {
-      visibleIds.add(row.adminId);
-      const smAdvisors = await storage.getAdvisorsByAdmin(row.adminId);
-      smAdvisors.forEach((a: any) => visibleIds.add(a.id));
-    }
-
-    return res.json(await storage.getClientsByAdvisors([...visibleIds]));
-  }
-
-  // Fallback
-  return res.json(await storage.getClients(companyId));
+  // Role scope lives in server/access.ts: GM / office admin = whole company; sales manager = own team;
+  // advisor = own clients; advisor admin = advisors under their sales manager(s).
+  return res.json((await getVisibleClients(currentStaff)).map(c => redactClientForRole(currentStaff.role, c)));
 });
 
 clientsRouter.get("/api/clients/:id", isAuthenticated, async (req: any, res) => {
@@ -74,24 +36,31 @@ clientsRouter.get("/api/clients/:id", isAuthenticated, async (req: any, res) => 
   if (!(await verifyClientOwnership(req, res, clientId))) return;
   const client = await storage.getClient(clientId);
   if (!client) return res.status(404).json({ message: "Client not found" });
-  res.json(client);
+  res.json(redactClientForRole((await getStaffFromSession(req))?.role, client));
 });
 
 clientsRouter.post("/api/clients", isAuthenticated, async (req: any, res) => {
   try {
+    const caller = await getStaffFromSession(req);
     const input = api.clients.create.input
       .extend({
         advisorId: z.coerce.number().optional().nullable(),
         spouseId: z.coerce.number().optional().nullable(),
       })
-      .parse(req.body);
-    if (!(await validateClientAdvisorAssignment(req, res, input.advisorId))) return;
+      .parse(stripFinancialClientFields(caller?.role, req.body));
+    // New clients belong to whoever creates them unless they pick someone they're allowed to assign to.
+    // Office admins aren't advisors, so theirs start unassigned. Advisors can only ever own their own.
+    let advisorId = input.advisorId;
+    if (advisorId === undefined || advisorId === null) {
+      advisorId = caller && caller.role !== "office_admin" ? caller.id : null;
+    }
+    if (!(await validateClientAdvisorAssignment(req, res, advisorId))) return;
     const companyId = await getCompanyId(req);
-    const client = await storage.createClient({ ...input, companyId });
+    const client = await storage.createClient({ ...input, advisorId, companyId });
     if (client.spouseId) {
       await storage.updateClient(client.spouseId, { spouseId: client.id });
     }
-    res.status(201).json(client);
+    res.status(201).json(redactClientForRole(caller?.role, client));
   } catch (err) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({
@@ -109,7 +78,8 @@ clientsRouter.put("/api/clients/:id", isAuthenticated, async (req: any, res) => 
     if (!(await verifyClientOwnership(req, res, clientId))) return;
     const existing = await storage.getClient(clientId);
     if (!existing) return res.status(404).json({ message: "Client not found" });
-    const input = api.clients.update.input.parse(req.body);
+    const callerRole = (await getStaffFromSession(req))?.role;
+    const input = api.clients.update.input.parse(stripFinancialClientFields(callerRole, req.body));
     if ((input as any).advisorId !== undefined && (input as any).advisorId !== existing.advisorId && !(await validateClientAdvisorAssignment(req, res, (input as any).advisorId))) return;
     const oldSpouseId = existing.spouseId;
     const newSpouseId = input.spouseId !== undefined ? input.spouseId : oldSpouseId;
@@ -124,7 +94,7 @@ clientsRouter.put("/api/clients/:id", isAuthenticated, async (req: any, res) => 
         await storage.updateClient(newSpouseId, { spouseId: clientId });
       }
     }
-    res.json(client);
+    res.json(redactClientForRole(callerRole, client));
   } catch (err) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({
@@ -143,10 +113,11 @@ clientsRouter.patch("/api/clients/:id", isAuthenticated, async (req: any, res) =
     if (!(await verifyClientOwnership(req, res, clientId))) return;
     const existing = await storage.getClient(clientId);
     if (!existing) return res.status(404).json({ message: "Client not found" });
-    const input = insertClientSchema.partial().parse(req.body);
+    const callerRole = (await getStaffFromSession(req))?.role;
+    const input = insertClientSchema.partial().parse(stripFinancialClientFields(callerRole, req.body));
     if (input.advisorId !== undefined && input.advisorId !== existing.advisorId && !(await validateClientAdvisorAssignment(req, res, input.advisorId))) return;
     const client = await storage.updateClient(clientId, input);
-    res.json(client);
+    res.json(redactClientForRole(callerRole, client));
   } catch (err) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({
@@ -156,6 +127,19 @@ clientsRouter.patch("/api/clients/:id", isAuthenticated, async (req: any, res) =
     }
     throw err;
   }
+});
+
+// Deleting a client is General Manager only.
+clientsRouter.delete("/api/clients/:id", isAuthenticated, denyHostUsers, async (req: any, res) => {
+  const caller = await getStaffFromSession(req);
+  if (!caller || !canDeleteClients(caller.role)) {
+    return res.status(403).json({ message: "Only the General Manager can delete clients" });
+  }
+  const clientId = Number(req.params.id);
+  if (!Number.isInteger(clientId) || !(await verifyClientOwnership(req, res, clientId))) return;
+  await deleteClientCascade(clientId);
+  console.info(`[clients] client ${clientId} deleted by staff ${caller.id}`);
+  res.status(204).send();
 });
 
 // ── Children ──────────────────────────────────────────────────────────────────
@@ -299,6 +283,7 @@ clientsRouter.delete("/api/activities/:id", isAuthenticated, denyHostUsers, asyn
 clientsRouter.get("/api/clients/:clientId/products", isAuthenticated, async (req: any, res) => {
   const clientId = Number(req.params.clientId);
   if (!(await verifyClientOwnership(req, res, clientId))) return;
+  if (!canViewFinancial((await getStaffFromSession(req))?.role)) return res.status(403).json({ message: "Your role cannot view financial information" });
   res.json(await storage.getProductsByClient(clientId));
 });
 
@@ -306,6 +291,7 @@ clientsRouter.post("/api/clients/:clientId/products", isAuthenticated, async (re
   try {
     const clientId = Number(req.params.clientId);
     if (!(await verifyClientOwnership(req, res, clientId))) return;
+    if (!canViewFinancial((await getStaffFromSession(req))?.role)) return res.status(403).json({ message: "Your role cannot view financial information" });
     const input = api.products.create.input
       .extend({ value: z.coerce.string() })
       .parse(req.body);
