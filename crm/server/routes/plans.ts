@@ -1216,16 +1216,24 @@ router.get("/api/clients/:clientId/net-worth", isAuthenticated, async (req: any,
 router.post("/api/clients/:clientId/net-worth", isAuthenticated, async (req: any, res) => {
     const clientId = Number(req.params.clientId);
     if (!(await verifyClientOwnership(req, res, clientId))) return;
-    const { type, category, name, value } = req.body;
-    const entry = await storage.createNetWorthEntry({ clientId, type, category, name, value: String(value) });
+    const { type, category, name, value, owner, notes, metadata } = req.body;
+    const entry = await storage.createNetWorthEntry({
+      clientId, type, category, name, value: String(value),
+      owner: owner ?? null, notes: notes ?? null, metadata: metadata ?? null,
+    } as any);
     res.status(201).json(entry);
   });
 
 router.put("/api/net-worth/:id", isAuthenticated, async (req: any, res) => {
     const id = Number(req.params.id);
     if (!(await verifyFpRecordOwnership(req, res, netWorthEntries, id))) return;
-    const updates = req.body;
+    // Whitelist editable fields (never let the body move an entry to another client/plan)
+    const updates: Record<string, any> = {};
+    for (const k of ["type", "category", "name", "value", "owner", "notes", "metadata"]) {
+      if (req.body[k] !== undefined) updates[k] = req.body[k];
+    }
     if (updates.value !== undefined) updates.value = String(updates.value);
+    updates.updatedAt = new Date();
     const entry = await storage.updateNetWorthEntry(id, updates);
     res.json(entry);
   });

@@ -1060,6 +1060,41 @@ function RESPTab({ clientId, planId }: { clientId: number; planId: number | null
   );
 }
 
+// ── Net Worth with Assets / Liabilities toggle ───────────────────────────────
+// MultiEntryNetWorthTab reads the active sub-tab from NWSubtabCtx. Without a provider
+// it was stuck on "assets", so liabilities (mortgage, car loan…) could not be added.
+function NetWorthWithSubtabs({ clientId, client }: { clientId: any; client: any }) {
+  const { isFrench: isFr } = useLanguage();
+  const [sub, setSub] = useState("assets");
+  const tabs = [
+    { k: "assets", l: isFr ? "Actifs" : "Assets" },
+    { k: "liabilities", l: isFr ? "Passifs" : "Liabilities" },
+  ];
+  return (
+    <NWSubtabCtx.Provider value={{ sub, setSub }}>
+      <div className="flex gap-2 px-6 pt-4" role="tablist">
+        {tabs.map((t) => (
+          <button
+            key={t.k}
+            role="tab"
+            aria-selected={sub === t.k}
+            data-testid={`nw-sub-${t.k}`}
+            onClick={() => setSub(t.k)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+              sub === t.k
+                ? "bg-slate-900 text-white border-slate-900"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
+      <MultiEntryNetWorthTab clientId={clientId} client={client} />
+    </NWSubtabCtx.Provider>
+  );
+}
+
 // ── Debt Tab ──────────────────────────────────────────────────────────────────
 
 function DebtTab({ clientId, planId }: { clientId: number; planId: number | null }) {
@@ -3407,7 +3442,7 @@ const { data: plans = [] } = useClientPlans(selectedClientId ?? 0);
                 <p className="text-sm mt-1">Create a financial plan first to access the simulation dashboard</p>
               </div>
             )}
-            {activeTab === "networth"   && <MultiEntryNetWorthTab clientId={selectedClientId} client={selectedClient as any} />}
+            {activeTab === "networth"   && <NetWorthWithSubtabs clientId={selectedClientId} client={selectedClient as any} />}
             {activeTab === "income"     && <IncomeSourcesTab     clientId={selectedClientId ?? undefined} />}
             {activeTab === "retirement" && selectedClientId && <RetirementTab clientId={selectedClientId} clientName={(selectedClient as any)?.firstName} />}
             {activeTab === "insurance"  && <InsuranceTab     clientId={selectedClientId} planId={activePlanId} client={selectedClient} />}

@@ -10,6 +10,16 @@ import { MonteCarloResults } from "../components/MonteCarloResults";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { toast } from "@/hooks/use-toast";
 import { useClientLocale } from "@/hooks/useClientLocale";
+import {
+  PaymentFields,
+  EMPTY_PAY,
+  isPropertyCat,
+  payFromMeta,
+  applyPayMeta,
+  buildLinkedMortgageMeta,
+  payChips,
+  type PayFields,
+} from "./nwPayments";
 /**
  * MultiEntryTabs.tsx
  * Net Worth, Retirement, Insurance, RESP, Debt tabs
@@ -552,7 +562,7 @@ type NWDraft = {
   mortgageBalance: string; // For Principal Residence / Real Estate (other) — auto-creates a linked Mortgage liability
   mortgageMonthlyPayment: string;
   includeInDebt: boolean;
-};
+} & PayFields;
 
 function emptyDraft(type: "asset" | "liability"): NWDraft {
   return {
@@ -575,9 +585,8 @@ function emptyDraft(type: "asset" | "liability"): NWDraft {
     purchasePrice: "",
     rentalIncome: "",
     rentalExpenses: "",
-    mortgageBalance: "",
-    mortgageMonthlyPayment: "",
     includeInDebt: false,
+    ...EMPTY_PAY,
   };
 }
 
@@ -678,38 +687,6 @@ function ExtraFields({
     );
   }
 
-  if (draft.category === "Principal Residence") {
-    elems.push(
-      <div key="realestate-pr" className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">Mortgage balance ($):</span>
-          <InlineInput
-            value={draft.mortgageBalance}
-            onChange={(v) => onChange("mortgageBalance", v)}
-            type="number"
-            placeholder="0"
-            className="w-28"
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">Monthly payment ($):</span>
-          <InlineInput
-            value={draft.mortgageMonthlyPayment}
-            onChange={(v) => onChange("mortgageMonthlyPayment", v)}
-            type="number"
-            placeholder="0"
-            className="w-28"
-          />
-        </div>
-        {Number(draft.mortgageBalance) > 0 && (
-          <span className="text-[10px] text-[var(--accent-cyan)] italic">
-             {ct("netWorth.linkedMortgage")} 
-          </span>
-        )}
-      </div>
-    );
-  }
-
   if (draft.category === "Real Estate (other)") {
     elems.push(
       <div key="realestate-other" className="flex flex-wrap items-center gap-3">
@@ -730,26 +707,6 @@ function ExtraFields({
           <InlineInput
             value={draft.purchasePrice}
             onChange={(v) => onChange("purchasePrice", v)}
-            type="number"
-            placeholder="0"
-            className="w-28"
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">Mortgage balance ($):</span>
-          <InlineInput
-            value={draft.mortgageBalance}
-            onChange={(v) => onChange("mortgageBalance", v)}
-            type="number"
-            placeholder="0"
-            className="w-28"
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--text-tertiary)]">Monthly payment ($):</span>
-          <InlineInput
-            value={draft.mortgageMonthlyPayment}
-            onChange={(v) => onChange("mortgageMonthlyPayment", v)}
             type="number"
             placeholder="0"
             className="w-28"
@@ -779,9 +736,17 @@ function ExtraFields({
             </div>
           </>
         )}
-        {Number(draft.mortgageBalance) > 0 && (
+      </div>
+    );
+  }
+
+  if (isPropertyCat(draft.category) || draft.category === "Mortgage" || draft.category === "Car Loan") {
+    elems.push(
+      <div key="payments" className="flex flex-wrap items-center gap-3">
+        <PaymentFields category={draft.category} f={draft} set={(k, v) => onChange(k as keyof NWDraft, v)} />
+        {isPropertyCat(draft.category) && Number(draft.mortgageBalance) > 0 && (
           <span className="text-[10px] text-[var(--accent-cyan)] italic">
-             {ct("netWorth.linkedMortgage")} 
+            {ct("netWorth.linkedMortgage")}
           </span>
         )}
       </div>
@@ -813,7 +778,8 @@ type NWEditForm = Partial<
     rentalExpenses: string ;
     funds: FundHolding[] ;
   }
->;
+> &
+  Partial<PayFields>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REPLACE everything from line 242 to the end of the NetWorthTab function
@@ -993,7 +959,7 @@ const SELECT_CLS =
   const [drafts, setDrafts] = useState<NWDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const { sub: nwTab } = useContext(NWSubtabCtx);
+  const { sub: nwTab, setSub: setNwTab } = useContext(NWSubtabCtx);
   const [editForm, setEditForm] = useState<NWEditForm>({});
   const [voiceOpen, setVoiceOpen] = useState<null | "asset" | "liability">(null);
 
@@ -1017,6 +983,7 @@ const SELECT_CLS =
   const netWorth = totalA - totalL;
 
   function addDraft(type: "asset" | "liability") {
+    setNwTab(type === "liability" ? "liabilities" : "assets");
     setDrafts((d) => [...d, emptyDraft(type)]);
   }
   function addVoiceDraft(type: "asset" | "liability", parsed: Record<string, string>) {
@@ -1039,7 +1006,10 @@ const SELECT_CLS =
         notes: parsed.notes ?? base.notes,
         monthlyPayment: parsed.monthlyPayment ?? base.monthlyPayment,
         mortgageBalance: parsed.mortgageBalance ?? base.mortgageBalance,
-        mortgageMonthlyPayment: parsed.mortgageMonthlyPayment ?? base.mortgageMonthlyPayment,
+        mortgageMonthlyPayment:
+          parsed.mortgageMonthlyPayment ??
+          (category === "Mortgage" ? (parsed.monthlyPayment ?? "") : base.mortgageMonthlyPayment),
+        loanPayment: category === "Car Loan" ? (parsed.monthlyPayment ?? "") : "",
       },
     ]);
   }
@@ -1072,6 +1042,20 @@ const SELECT_CLS =
       purchasePrice: m.purchasePrice ? String(m.purchasePrice) : "",
       rentalIncome: m.rentalIncome ? String(m.rentalIncome) : "",
       rentalExpenses: m.rentalExpenses ? String(m.rentalExpenses) : "",
+      ...payFromMeta(cat, m),
+      ...(isPropertyCat(cat)
+        ? (() => {
+            const lk = entries.find(
+              (x) =>
+                x.type === "liability" &&
+                x.category === "Mortgage" &&
+                x.metadata?.linkedAssetName === e.name
+            );
+            return lk
+              ? { mortgageBalance: String(Number(lk.value)), ...payFromMeta("Mortgage", lk.metadata) }
+              : {};
+          })()
+        : {}),
     });
   }
 
@@ -1099,6 +1083,7 @@ const SELECT_CLS =
         if (form.rentalExpenses) m.rentalExpenses = form.rentalExpenses;
       }
     }
+    applyPayMeta(m, cat, form as any);
     return m;
   }
 
@@ -1125,6 +1110,40 @@ const SELECT_CLS =
         notes: editForm.notes || null,
         metadata: Object.keys(m).length ? m : null,
       });
+      // Keep the linked Mortgage liability in sync with the property
+      if (isPropertyCat(editForm.category)) {
+        const orig = entries.find((x) => x.id === editingId);
+        const linked = entries.find(
+          (x) =>
+            x.type === "liability" &&
+            x.category === "Mortgage" &&
+            x.metadata?.linkedAssetName === orig?.name
+        );
+        const bal = Number(editForm.mortgageBalance || 0);
+        if (bal > 0) {
+          const body = {
+            type: "liability",
+            category: "Mortgage",
+            name: `Mortgage — ${editDisplayName}`,
+            owner,
+            value: String(bal),
+            notes: `Linked to ${editDisplayName}`,
+            metadata: buildLinkedMortgageMeta(String(editDisplayName), editForm),
+          };
+          if (linked) await api.put(`/api/crm/net-worth/${linked.id}`, body);
+          else await api.post(`/api/crm/clients/${clientId}/net-worth`, body);
+        } else if (linked) {
+          await api.put(`/api/crm/net-worth/${linked.id}`, {
+            type: "liability",
+            category: "Mortgage",
+            name: `Mortgage — ${editDisplayName}`,
+            owner,
+            value: String(linked.value),
+            notes: linked.notes,
+            metadata: buildLinkedMortgageMeta(String(editDisplayName), editForm),
+          });
+        }
+      }
       setEditingId(null);
       setEditForm({});
       await load();
@@ -1185,8 +1204,7 @@ const SELECT_CLS =
             metadata: Object.keys(m).length ? m : null,
           });
           if (isProperty && mortgageVal > 0) {
-            const mortgageMeta: any = { linkedAssetName: propName };
-            if (d.mortgageMonthlyPayment) mortgageMeta.monthlyPayment = d.mortgageMonthlyPayment;
+            const mortgageMeta: any = buildLinkedMortgageMeta(propName, d);
             await api.post(`/api/crm/clients/${clientId}/net-worth`, {
               type: "liability",
               category: "Mortgage",
@@ -1203,8 +1221,8 @@ const SELECT_CLS =
               name: propName,
               category: d.category,
               balance: d.value,
-              interestRate: "0",
-              minimumPayment: d.monthlyPayment || "0",
+              interestRate: String(m.interestRate ?? "0"),
+              minimumPayment: String(m.monthlyPayment ?? (d.monthlyPayment || "0")),
               payoffStrategy: "avalanche",
               notes: `Linked from Net Worth — ${d.category}`,
             });
@@ -1283,6 +1301,16 @@ const SELECT_CLS =
         </span>
       );
     }
+    for (const c of payChips(entry.category, m))
+      chips.push(
+        <span
+          key={c.key}
+          data-testid={`chip-${c.key}-${entry.id}`}
+          className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono"
+        >
+          {c.text}
+        </span>
+      );
     if (!chips.length) return null;
     return <div className="flex flex-wrap gap-1 mt-0.5">{chips}</div>;
   }
@@ -1747,6 +1775,15 @@ const SELECT_CLS =
                               </>
                             )}
                           </>
+                        )}
+                        {(isPropertyCat(editForm.category) ||
+                          editForm.category === "Mortgage" ||
+                          editForm.category === "Car Loan") && (
+                          <PaymentFields
+                            category={editForm.category ?? ""}
+                            f={editForm as any}
+                            set={(k, v) => setEditForm((f) => ({ ...f, [k]: v }))}
+                          />
                         )}
                       </div>
                       <div className="flex gap-2 justify-end">
