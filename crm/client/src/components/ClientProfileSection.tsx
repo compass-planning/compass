@@ -219,6 +219,14 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
     } finally { setSaving(false); }
   }
 
+  // Who this client can be (re)assigned to: the same server-enforced list used when creating clients, tasks and deals.
+  const { data: assignable = [] } = useQuery<{ id: number; firstName: string; lastName: string; role: string }[]>({
+    queryKey: ["/api/crm/staff/assignable-advisors"],
+  });
+  const currentAdvisorId = (client.advisorId as number | null | undefined) ?? null;
+  const assigneeInList = currentAdvisorId == null || assignable.some(a => a.id === currentAdvisorId);
+  const canReassign = assignable.length > 1 || (assignable.length === 1 && currentAdvisorId == null);
+
   async function inlinePatch(data: Record<string, unknown>) {
     try {
       const res = await fetch(`/api/crm/clients/${client.id}`, {
@@ -226,7 +234,7 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to save");
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Failed to save");
       const updated = await res.json();
       qc.invalidateQueries({ queryKey: ["client", client.id] });
       qc.invalidateQueries({ queryKey: ["client-detail", client.id] });
@@ -331,9 +339,33 @@ export function ClientProfileSection({ client, onClientUpdate, updated }: {
             </div>
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Household Profile</h3>
           </div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            {hasSpouse ? "Joint File" : "Single File"}
-          </span>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <span>Assigned to</span>
+              <select
+                value={currentAdvisorId ?? ""}
+                disabled={!canReassign}
+                onChange={async e => {
+                  const v = e.target.value;
+                  await inlinePatch({ advisorId: v ? Number(v) : null });
+                  toast({ title: "Reassigned", description: "Client assignment updated." });
+                }}
+                data-testid="select-client-assignee"
+                className="normal-case tracking-normal font-medium text-xs text-slate-700 border border-slate-200 rounded-md px-2 py-1 bg-white disabled:opacity-70 max-w-[11rem]"
+              >
+                <option value="">Unassigned</option>
+                {!assigneeInList && <option value={currentAdvisorId ?? ""}>Current assignee</option>}
+                {assignable.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.firstName} {a.lastName}{a.role === "general_manager" ? " (General Manager)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {hasSpouse ? "Joint File" : "Single File"}
+            </span>
+          </div>
         </div>
 
         {/* Adults grid */}

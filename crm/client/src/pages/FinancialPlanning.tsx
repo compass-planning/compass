@@ -3235,6 +3235,7 @@ function IncomeSourcesTab({ clientId }: { clientId?: number }) {
 
 export function FinancialPlanningContent({ initialClientId, clientId: clientIdProp, noSidebar, activeTabOverride, onTabChangeOverride, t }: { initialClientId?: number; clientId?: number; noSidebar?: boolean; activeTabOverride?: string; onTabChangeOverride?: (t: any) => void }) {
   const { isFrench: isFr } = useLanguage();
+  const [, navigate] = useLocation();
   const tabs = getTabs(isFr);
   const navStructure = getNavStructure(isFr);
   const [_activeTab, _setActiveTab] = useState<TabKey>("overview");
@@ -3382,7 +3383,14 @@ const { data: plans = [] } = useClientPlans(selectedClientId ?? 0);
               <InsightLedDashboard
                 clientId={selectedClientId}
                 client={selectedClient as any}
-                onNavigate={(tab: string) => setActiveTab(tab as TabKey)}
+                onNavigate={(tab: string) => {
+                  // The dashboard's call-to-action targets use their own names; map them onto this page's tabs.
+                  if (tab === "documents") { navigate("/calendar"); return; } // Schedule a review
+                  const map: Record<string, TabKey> = {
+                    retirementhub: "retirement", protection: "insurance", fp: "plan", taxestate: "tax",
+                  };
+                  setActiveTab((map[tab] ?? tab) as TabKey);
+                }}
               />
             )}
             {activeTab === "overview" && (!selectedClientId || !selectedClient) && (
