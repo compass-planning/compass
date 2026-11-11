@@ -36,6 +36,10 @@ r.post("/clients/:id/pensions", async (req: any, res: Response) => {
     isVested: body.isVested ?? true,
     subscriberOwner: body.subscriberOwner || "primary",
     notes: body.notes || null,
+    contributionStartAge: body.contributionStartAge ? Number(body.contributionStartAge) : null,
+    noLongerContributing: !!body.noLongerContributing,
+    avgAnnualReturn: body.avgAnnualReturn !== "" && body.avgAnnualReturn != null ? String(body.avgAnnualReturn) : null,
+    annualContribution: body.annualContribution !== "" && body.annualContribution != null ? String(body.annualContribution) : null,
   }).returning();
   res.status(201).json(row);
 });
@@ -63,6 +67,10 @@ r.patch("/pensions/:id", async (req: any, res: Response) => {
     isVested: body.isVested ?? true,
     subscriberOwner: body.subscriberOwner || "primary",
     notes: body.notes || null,
+    contributionStartAge: body.contributionStartAge ? Number(body.contributionStartAge) : null,
+    noLongerContributing: !!body.noLongerContributing,
+    avgAnnualReturn: body.avgAnnualReturn !== "" && body.avgAnnualReturn != null ? String(body.avgAnnualReturn) : null,
+    annualContribution: body.annualContribution !== "" && body.annualContribution != null ? String(body.annualContribution) : null,
     updatedAt: new Date(),
   } as any).where(eq(pensionPlans.id, ex.id)).returning();
   res.json(u);

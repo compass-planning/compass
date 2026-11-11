@@ -1784,6 +1784,10 @@ export const pensionPlans = pgTable("pension_plans", {
   survivorBenefitPct:         decimal("survivor_benefit_pct", { precision: 5, scale: 4 }),
   isVested:                   boolean("is_vested").default(true),
   notes:                      text("notes"),
+  contributionStartAge:       integer("contribution_start_age"),
+  noLongerContributing:       boolean("no_longer_contributing").default(false),
+  avgAnnualReturn:            decimal("avg_annual_return", { precision: 5, scale: 2 }),
+  annualContribution:         decimal("annual_contribution", { precision: 15, scale: 2 }),
   createdAt:                  timestamp("created_at").defaultNow().notNull(),
   updatedAt:                  timestamp("updated_at").defaultNow().notNull(),
   });

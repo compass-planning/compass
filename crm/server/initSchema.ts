@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS email_audit_logs (
   hash text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE pension_plans ADD COLUMN IF NOT EXISTS contribution_start_age integer;
+ALTER TABLE pension_plans ADD COLUMN IF NOT EXISTS no_longer_contributing boolean DEFAULT false;
+ALTER TABLE pension_plans ADD COLUMN IF NOT EXISTS avg_annual_return numeric(5,2);
+ALTER TABLE pension_plans ADD COLUMN IF NOT EXISTS annual_contribution numeric(15,2);
 ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS median_outcome numeric(15,2);
 ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS percentile_10 numeric(15,2);
 ALTER TABLE plan_snapshots ADD COLUMN IF NOT EXISTS percentile_90 numeric(15,2);

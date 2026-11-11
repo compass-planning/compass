@@ -1,5 +1,6 @@
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useState, useEffect } from "react";
+import { planFutureValue, dcFutureValue, ageFromDob } from "./pensionFV";
 import { api } from "@/lib/api";
 import { type T } from "@/i18n/translations";
 import { Plus, Trash2, Pencil, Save, X, Building2 } from "lucide-react";
@@ -26,6 +27,10 @@ interface PensionPlan {
   annuityMonthlyAmount: string | null;
   annuityStartAge: number | null;
   annuityIsVested: boolean | null;
+  contributionStartAge?: number | null;
+  noLongerContributing?: boolean | null;
+  avgAnnualReturn?: string | null;
+  annualContribution?: string | null;
 }
 
 // These existing fields are repurposed for no_pension:
@@ -75,8 +80,10 @@ function calcDBPPAnnual(plan: PensionPlan): number {
   return Math.round(rate * years * salary);
 }
 
-function calcDCPPDrawdown(plan: PensionPlan): number {
-  return Math.round(Number(plan.currentBalance || 0) * 0.04);
+function calcDCPPDrawdown(plan: PensionPlan, client?: any): number {
+  // 4% of the projected balance at retirement when an average annual return is entered
+  const fv = planFutureValue(plan, client);
+  return Math.round((fv ? fv.fv : Number(plan.currentBalance || 0)) * 0.04);
 }
 
 function pensionLabel(type: string) {
@@ -150,6 +157,10 @@ const emptyPlan = (
   survivorBenefitPct: "0.60",
   isVested: true,
   notes: "",
+  contributionStartAge: "",
+  noLongerContributing: false,
+  avgAnnualReturn: "",
+  annualContribution: "",
 });
 
 export function PensionTab({
@@ -170,6 +181,13 @@ export function PensionTab({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<any>(emptyPlan());
   const [busy, setBusy] = useState(false);
+  // Client record for the age used in the future-value estimate (falls back to a fetch when not passed in)
+  const [fetchedClient, setFetchedClient] = useState<any>(null);
+  useEffect(() => {
+    if (client) return;
+    api.get<any>(`/api/crm/clients/${clientId}`).then(setFetchedClient).catch(() => {});
+  }, [clientId, client]);
+  const ageClient = client ?? fetchedClient;
 
   const activePerson = person === "spouse" ? "spouse" : "primary";
   const clientName = client?.firstName ?? "Client";
@@ -303,7 +321,7 @@ export function PensionTab({
     .reduce((s, p) => s + calcDBPPAnnual(p), 0);
   const dcppDrawdown = filteredPlans
     .filter((p) => p.pensionType === "dcpp" || p.pensionType === "group_rrsp")
-    .reduce((s, p) => s + calcDCPPDrawdown(p), 0);
+    .reduce((s, p) => s + calcDCPPDrawdown(p, ageClient), 0);
   const totalDCPP = filteredPlans
     .filter((p) => p.pensionType !== "dbpp")
     .reduce((s, p) => s + Number(p.currentBalance || 0), 0);
@@ -385,7 +403,7 @@ export function PensionTab({
                     ? calcDBPPAnnual(p)
                     : p.pensionType === "no_pension"
                       ? 0
-                      : calcDCPPDrawdown(p);
+                      : calcDCPPDrawdown(p, ageClient);
                 return (
                   <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                     <TD>
@@ -694,6 +712,92 @@ export function PensionTab({
                       />
                     </div>
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Contribution Start Age</label>
+                      <input
+                        type="number" min={14} max={100}
+                        value={form.contributionStartAge ?? ""}
+                        onChange={(e) => upd("contributionStartAge", e.target.value)}
+                        className={INPUT} placeholder="e.g. 30"
+                        data-testid="input-dc-start-age"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Annual Contribution ($/yr, employee + employer)</label>
+                      <input
+                        type="number" min={0}
+                        value={form.noLongerContributing ? "" : (form.annualContribution ?? "")}
+                        disabled={!!form.noLongerContributing}
+                        onChange={(e) => upd("annualContribution", e.target.value)}
+                        className={INPUT} placeholder="0"
+                        data-testid="input-dc-annual-contribution"
+                      />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!form.noLongerContributing}
+                      onChange={(e) => upd("noLongerContributing", e.target.checked)}
+                      data-testid="checkbox-dc-no-longer-contributing"
+                    />
+                    No longer contributing
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Average Annual Return (%)</label>
+                      <input
+                        type="number" step="0.1" min={-20} max={30}
+                        value={form.avgAnnualReturn ?? ""}
+                        onChange={(e) => upd("avgAnnualReturn", e.target.value)}
+                        className={INPUT} placeholder="e.g. 5"
+                        data-testid="input-dc-avg-return"
+                      />
+                    </div>
+                  </div>
+                  {(() => {
+                    const age = ageFromDob(form.subscriberOwner === "spouse" ? ageClient?.spouseDateOfBirth : ageClient?.dateOfBirth);
+                    const ret = Number(form.retirementAge || 65);
+                    const r = form.avgAnnualReturn === "" || form.avgAnnualReturn == null ? null : Number(form.avgAnnualReturn);
+                    const res = dcFutureValue({
+                      balance: Number(form.currentBalance || 0),
+                      annualContribution: Number(form.annualContribution || 0),
+                      contributionStartAge: form.contributionStartAge ? Number(form.contributionStartAge) : null,
+                      noLongerContributing: !!form.noLongerContributing,
+                      avgReturnPct: r,
+                      currentAge: age,
+                      retirementAge: ret,
+                    });
+                    return (
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4" data-testid="dc-future-value">
+                        <p className="text-xs font-semibold text-purple-600 uppercase tracking-widest mb-1">
+                          Projected value at retirement (age {ret})
+                        </p>
+                        {res ? (
+                          <>
+                            <p className="text-2xl font-bold text-purple-900" data-testid="text-dc-future-value">
+                              {fmt$(res.fv)}
+                            </p>
+                            <p className="text-xs text-purple-700 mt-1">
+                              {res.yearsToRetirement} yr{res.yearsToRetirement === 1 ? "" : "s"} of growth at {r}%/yr
+                              {form.noLongerContributing
+                                ? " · no further contributions"
+                                : res.contributionYears > 0
+                                  ? ` · contributing for ${res.contributionYears} more yr${res.contributionYears === 1 ? "" : "s"}`
+                                  : ""}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-purple-700" data-testid="text-dc-future-value-hint">
+                            {r == null
+                              ? "Enter an average annual return to project the balance at retirement."
+                              : "Add the client's date of birth on their profile to project the balance."}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               )}
 
