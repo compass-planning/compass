@@ -12,7 +12,9 @@ export type EmailAuditAction =
   | "account.connect"
   | "account.disconnect"
   | "zoom.connect"
-  | "zoom.disconnect";
+  | "zoom.disconnect"
+  | "zoom.meeting_create"
+  | "zoom.meeting_cancel";
 
 export interface EmailAuditEntry {
   companyId: number | null;

@@ -199,3 +199,71 @@ export async function disconnectZoom(staffId: number): Promise<boolean> {
   await pool.query("UPDATE zoom_accounts SET status='disconnected', disconnected_at=now(), updated_at=now() WHERE id=$1", [row.id]);
   return true;
 }
+
+
+// ── Meetings (Phase 2) ───────────────────────────────────────────────────────
+
+export interface ZoomMeetingInput {
+  topic: string;
+  /** Local wall-clock start, "YYYY-MM-DDTHH:mm:ss", interpreted in `timeZone`. */
+  startLocal: string;
+  timeZone: string;
+  durationMin: number;
+  agenda?: string;
+}
+
+export interface ZoomMeetingResult {
+  id: string;
+  joinUrl: string;
+  password: string | null;
+}
+
+export class ZoomApiError extends Error {}
+
+/** Schedules a meeting on the advisor's own Zoom account (waiting room on, no auto-recording). */
+export async function createZoomMeeting(staffId: number, input: ZoomMeetingInput): Promise<ZoomMeetingResult> {
+  const token = await getValidZoomAccessToken(staffId);
+  const res = await fetch(`${ZOOM_API}/users/me/meetings`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      topic: input.topic.slice(0, 200),
+      type: 2,
+      start_time: input.startLocal,
+      timezone: input.timeZone,
+      duration: Math.max(1, Math.round(input.durationMin)),
+      agenda: input.agenda?.slice(0, 2000),
+      settings: {
+        waiting_room: true,
+        join_before_host: false,
+        host_video: true,
+        participant_video: true,
+        mute_upon_entry: true,
+        auto_recording: "none",
+      },
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error("[zoom] create meeting failed:", res.status, detail.slice(0, 300));
+    if (res.status === 401) throw new ZoomAuthError("Zoom authorization expired. Please reconnect Zoom.");
+    throw new ZoomApiError(`Zoom could not create the meeting (HTTP ${res.status}).`);
+  }
+  const j = (await res.json()) as { id: number | string; join_url: string; password?: string };
+  return { id: String(j.id), joinUrl: j.join_url, password: j.password ?? null };
+}
+
+/** Best-effort delete at Zoom; a meeting that is already gone (404) counts as deleted. */
+export async function deleteZoomMeeting(staffId: number, meetingId: string): Promise<boolean> {
+  try {
+    const token = await getValidZoomAccessToken(staffId);
+    const res = await fetch(`${ZOOM_API}/meetings/${encodeURIComponent(meetingId)}?schedule_for_reminder=false`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.ok || res.status === 404;
+  } catch (e) {
+    console.error("[zoom] delete meeting failed:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}

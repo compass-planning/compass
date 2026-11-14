@@ -482,6 +482,7 @@ export function InsightLedDashboard({
         <div className="flex gap-3">
           <button
             onClick={() => onNavigate?.("documents")}
+            data-testid="button-schedule-review"
             className="px-4 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium text-slate-700 hover:border-violet-400 hover:text-violet-700 shadow-sm transition-all"
           >
             {t.dashboard.scheduleReview}

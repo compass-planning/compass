@@ -3,7 +3,6 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { AppLayout } from "@/components/AppLayout";
 import { ConnectEmailPrompt } from "@/components/EmailSetupModal";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useClients } from "@/hooks/use-clients";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Clock, MapPin, Users, X, Trash2, Video, AlertCircle, RefreshCw, Settings, CalendarX2, Link2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, addDays, subDays, isToday as isTodayFn, startOfWeek, endOfWeek } from "date-fns";
 
@@ -309,6 +308,12 @@ function EventDetailModal({ event, onClose, timezone }: { event: CalendarEvent; 
     },
   });
 
+  const zoomJoinUrl = useMemo(() => {
+    const hay = `${event.onlineMeetingUrl ?? ""} ${event.location?.displayName ?? ""} ${event.body?.content ?? ""} ${event.bodyPreview ?? ""}`;
+    const m = hay.match(/https:\/\/[a-z0-9.-]*zoom\.(?:us|com)\/j\/[^\s"'<>)]+/i);
+    return m ? m[0].replace(/&amp;/g, "&") : null;
+  }, [event]);
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-background rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
@@ -358,7 +363,16 @@ function EventDetailModal({ event, onClose, timezone }: { event: CalendarEvent; 
             </div>
           )}
 
-          {event.onlineMeetingUrl && (
+          {zoomJoinUrl && (
+            <div className="flex items-center gap-3">
+              <Video className="w-5 h-5 text-sky-600" />
+              <a href={zoomJoinUrl} target="_blank" rel="noopener noreferrer" data-testid="link-join-zoom-meeting" className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-semibold rounded-xl hover:bg-sky-700 transition-colors text-sm shadow-sm">
+                Join Zoom Meeting
+              </a>
+            </div>
+          )}
+
+          {event.onlineMeetingUrl && !zoomJoinUrl && (
             <div className="flex items-center gap-3">
               <Video className="w-5 h-5 text-violet-600" />
               <a href={event.onlineMeetingUrl} target="_blank" rel="noopener noreferrer" data-testid="link-join-teams-meeting" className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 transition-colors text-sm shadow-sm">
@@ -402,19 +416,42 @@ function EventDetailModal({ event, onClose, timezone }: { event: CalendarEvent; 
   );
 }
 
-function CreateEventModal({ defaultDate, onClose, timezone }: { defaultDate: Date | null; onClose: () => void; timezone: string }) {
+export function useStaffTimezoneExport(): string {
+  return useStaffTimezone();
+}
+
+export function CreateEventModal({
+  defaultDate,
+  onClose,
+  timezone,
+  defaults,
+}: {
+  defaultDate: Date | null;
+  onClose: () => void;
+  timezone: string;
+  defaults?: { clientId?: number; attendee?: string; subject?: string; zoom?: boolean };
+}) {
   const { isFrench: isFr } = useLanguage();
   const queryClient = useQueryClient();
-  const { data: clientsList } = useClients();
-  const [subject, setSubject] = useState("");
+  const { data: clientsList } = useQuery<{ id: number; firstName: string; lastName: string }[]>({
+    queryKey: ["/api/crm/clients"],
+  });
+  const [subject, setSubject] = useState(defaults?.subject ?? "");
   const [date, setDate] = useState(defaultDate ? format(defaultDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"));
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [location, setLocation] = useState("");
-  const [attendees, setAttendees] = useState("");
+  const [attendees, setAttendees] = useState(defaults?.attendee ?? "");
   const [isAllDay, setIsAllDay] = useState(false);
-  const [clientId, setClientId] = useState("");
+  const [clientId, setClientId] = useState(defaults?.clientId ? String(defaults.clientId) : "");
   const [isTeamsMeeting, setIsTeamsMeeting] = useState(false);
+  const [isZoomMeeting, setIsZoomMeeting] = useState(!!defaults?.zoom);
+  const [errorMsg, setErrorMsg] = useState("");
+  const { data: zoomStatus } = useQuery<{ configured: boolean; connected: boolean; needsReauth: boolean }>({
+    queryKey: ["/api/crm/zoom/status"],
+    staleTime: 60000,
+  });
+  const zoomReady = !!zoomStatus?.connected;
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -435,12 +472,17 @@ function CreateEventModal({ defaultDate, onClose, timezone }: { defaultDate: Dat
           attendees: attendeeList.length > 0 ? attendeeList : undefined,
           clientId: clientId ? Number(clientId) : undefined,
           isOnlineMeeting: isTeamsMeeting || undefined,
+          isZoomMeeting: isZoomMeeting || undefined,
         }),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to create event");
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({} as { message?: string }));
+        throw new Error(j.message || "Failed to create event");
+      }
       return res.json();
     },
+    onError: (e: Error) => setErrorMsg(e.message),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/calendar/events"] });
       if (clientId) {
@@ -522,8 +564,34 @@ function CreateEventModal({ defaultDate, onClose, timezone }: { defaultDate: Dat
             Timezone: {timezone} — change in Settings
           </div>
 
+          <label
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
+              !zoomReady ? "opacity-60 cursor-not-allowed border-border" : isZoomMeeting ? "border-sky-500 bg-sky-50 dark:bg-sky-950/20 cursor-pointer" : "border-border hover:border-sky-300 cursor-pointer"
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={isZoomMeeting}
+              disabled={!zoomReady || isAllDay}
+              onChange={e => { setIsZoomMeeting(e.target.checked); if (e.target.checked) setIsTeamsMeeting(false); }}
+              data-testid="input-event-zoom-meeting"
+              className="rounded"
+            />
+            <Video className="w-4 h-4 text-sky-600" />
+            <div>
+              <span className="text-sm font-semibold">Zoom Meeting</span>
+              <p className="text-xs text-slate-500" data-testid="text-zoom-option-hint">
+                {zoomReady
+                  ? "Create a Zoom meeting and put the join link in the invitation"
+                  : zoomStatus?.needsReauth
+                    ? "Zoom needs to be reconnected in Settings"
+                    : "Connect Zoom in Settings to enable"}
+              </p>
+            </div>
+          </label>
+
           <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${isTeamsMeeting ? "border-violet-500 bg-violet-50 dark:bg-violet-950/20" : "border-border hover:border-violet-300"}`}>
-            <input type="checkbox" checked={isTeamsMeeting} onChange={e => setIsTeamsMeeting(e.target.checked)} data-testid="input-event-teams-meeting" className="rounded" />
+            <input type="checkbox" checked={isTeamsMeeting} onChange={e => { setIsTeamsMeeting(e.target.checked); if (e.target.checked) setIsZoomMeeting(false); }} data-testid="input-event-teams-meeting" className="rounded" />
             <Video className="w-4 h-4 text-violet-600" />
             <div>
               <span className="text-sm font-semibold">Teams Meeting</span>
@@ -573,12 +641,15 @@ function CreateEventModal({ defaultDate, onClose, timezone }: { defaultDate: Dat
           </div>
         </div>
 
+        {errorMsg && (
+          <p className="px-6 pb-2 text-sm text-destructive" data-testid="text-create-event-error">{errorMsg}</p>
+        )}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-background/50 rounded-b-2xl">
           <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-muted transition-colors">
             Cancel
           </button>
           <button
-            onClick={() => createMutation.mutate()}
+            onClick={() => { setErrorMsg(""); createMutation.mutate(); }}
             disabled={createMutation.isPending || !subject}
             data-testid="button-save-event"
             className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground font-semibold rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"

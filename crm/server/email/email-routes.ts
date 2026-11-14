@@ -11,6 +11,10 @@ import { getGmailAuthUrl, exchangeGmailCode, revokeGoogleToken } from "./provide
 import { testImapConnection, type ImapSmtpConfig } from "./providers/imap-smtp";
 import { lookupKnownServer, getAllKnownDomains } from "./known-servers";
 import { z } from "zod";
+import { pool } from "../db";
+import {
+  createZoomMeeting, deleteZoomMeeting, ZoomAuthError, ZoomApiError,
+} from "../zoom/zoom-client";
 import {
   CalendarNotAvailableError,
   type EmailProvider,
@@ -1098,20 +1102,92 @@ export function registerEmailRoutes(app: Express) {
             attendees: z.array(z.string().email()).optional(),
             clientId: z.coerce.number().optional().nullable(),
             isOnlineMeeting: z.boolean().optional(),
+            isZoomMeeting: z.boolean().optional(),
           })
           .parse((req as { body: unknown }).body);
 
-        const created = await provider.createEvent({
-          subject: input.subject,
-          start: input.start,
-          end: input.end,
-          timeZone: input.timeZone,
-          location: input.location,
-          body: input.body,
-          isAllDay: input.isAllDay,
-          attendees: input.attendees,
-          isOnlineMeeting: input.isOnlineMeeting,
-        });
+        // ── Optional Zoom meeting: create it first so the join link goes into the invitation ──
+        let zoom: { id: string; joinUrl: string; password: string | null } | null = null;
+        let zoomStaff: { id: number; companyId: number | null } | null = null;
+        let eventBody = input.body;
+        let eventLocation = input.location;
+        if (input.isZoomMeeting) {
+          const rx = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+          const ms = rx.exec(input.start);
+          const me = rx.exec(input.end);
+          if (input.isAllDay || !ms || !me) {
+            return res.status(400).json({ message: "A Zoom meeting needs a start and end time (not an all-day event)." });
+          }
+          const toMin = (m: RegExpExecArray) => Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) / 60000;
+          const durationMin = toMin(me) - toMin(ms);
+          if (!(durationMin > 0) || durationMin > 24 * 60) {
+            return res.status(400).json({ message: "The end time must be after the start time." });
+          }
+          const st = await getStaffFromSession(req as { session?: { staffId?: number } });
+          if (!st) return res.status(403).json({ message: "Advisor account required to schedule a Zoom meeting." });
+          zoomStaff = { id: st.id, companyId: st.companyId ?? null };
+          try {
+            zoom = await createZoomMeeting(st.id, {
+              topic: input.subject,
+              startLocal: `${ms[1]}-${ms[2]}-${ms[3]}T${ms[4]}:${ms[5]}:${ms[6] ?? "00"}`,
+              timeZone: input.timeZone,
+              durationMin,
+              agenda: input.body,
+            });
+          } catch (e) {
+            if (e instanceof ZoomAuthError) {
+              return res.status(409).json({ message: e.message, zoomReconnect: true });
+            }
+            if (e instanceof ZoomApiError) return res.status(502).json({ message: e.message });
+            throw e;
+          }
+          const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+          const parts: string[] = [];
+          if (input.body) parts.push(`<p>${esc(input.body).replace(/\n/g, "<br>")}</p>`);
+          parts.push(
+            `<p><b>Join Zoom Meeting</b><br><a href="${esc(zoom.joinUrl)}">${esc(zoom.joinUrl)}</a><br>Meeting ID: ${esc(zoom.id)}${zoom.password ? `<br>Passcode: ${esc(zoom.password)}` : ""}</p>`,
+          );
+          eventBody = parts.join("");
+          eventLocation = input.location || "Zoom Meeting";
+        }
+
+        let created: Awaited<ReturnType<EmailProvider["createEvent"]>>;
+        try {
+          created = await provider.createEvent({
+            subject: input.subject,
+            start: input.start,
+            end: input.end,
+            timeZone: input.timeZone,
+            location: eventLocation,
+            body: eventBody,
+            isAllDay: input.isAllDay,
+            attendees: input.attendees,
+            isOnlineMeeting: zoom ? false : input.isOnlineMeeting,
+          });
+        } catch (e) {
+          // Don't leave an orphaned Zoom meeting behind if the calendar event failed.
+          if (zoom && zoomStaff) await deleteZoomMeeting(zoomStaff.id, zoom.id);
+          throw e;
+        }
+
+        if (zoom && zoomStaff) {
+          try {
+            await pool.query(
+              `INSERT INTO zoom_meetings (company_id, staff_id, client_id, zoom_meeting_id, topic, start_local, timezone, duration_min, join_url, calendar_event_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+              [zoomStaff.companyId, zoomStaff.id, input.clientId ?? null, zoom.id, input.subject, input.start, input.timeZone,
+               Math.round((Date.parse(input.end + "Z") - Date.parse(input.start + "Z")) / 60000), zoom.joinUrl, created.id ?? null],
+            );
+            void logEmailAudit({
+              companyId: zoomStaff.companyId, actorType: "staff", actorId: zoomStaff.id,
+              action: "zoom.meeting_create", provider: "zoom", targetId: zoom.id,
+              detail: { clientId: input.clientId ?? null, attendees: input.attendees?.length ?? 0 },
+              ip: (req as { ip?: string }).ip || null,
+            });
+          } catch (e) {
+            console.error("[zoom] could not record meeting:", e instanceof Error ? e.message : e);
+          }
+        }
 
         if (input.clientId) {
           const staff = await getStaffFromSession(
@@ -1125,6 +1201,7 @@ export function registerEmailRoutes(app: Express) {
               if (input.location) descParts.push(`Location: ${input.location}`);
               if (created.onlineMeetingUrl)
                 descParts.push(`Teams Meeting: ${created.onlineMeetingUrl}`);
+              if (zoom) descParts.push(`Zoom Meeting: ${zoom.joinUrl}`);
               await storage.createActivity({
                 clientId: input.clientId,
                 activityType: "appointment",
@@ -1217,6 +1294,27 @@ export function registerEmailRoutes(app: Express) {
         }
         const id = (req as { params: { id: string } }).params.id;
         await provider.deleteEvent(id);
+        // If this event carried a Zoom meeting, cancel it at Zoom too.
+        try {
+          const st = await getStaffFromSession(req as { session?: { staffId?: number } });
+          if (st) {
+            const zr = await pool.query(
+              "SELECT id, zoom_meeting_id FROM zoom_meetings WHERE staff_id=$1 AND calendar_event_id=$2 AND status='scheduled'",
+              [st.id, id],
+            );
+            for (const row of zr.rows) {
+              const ok = await deleteZoomMeeting(st.id, row.zoom_meeting_id);
+              await pool.query("UPDATE zoom_meetings SET status=$2, updated_at=now() WHERE id=$1", [row.id, ok ? "cancelled" : "cancel_failed"]);
+              void logEmailAudit({
+                companyId: st.companyId ?? null, actorType: "staff", actorId: st.id,
+                action: "zoom.meeting_cancel", provider: "zoom", targetId: row.zoom_meeting_id,
+                detail: { ok }, ip: (req as { ip?: string }).ip || null,
+              });
+            }
+          }
+        } catch (e) {
+          console.error("[zoom] cancel on event delete failed:", e instanceof Error ? e.message : e);
+        }
         res.status(204).send();
       } catch (err: unknown) {
         if (err instanceof CalendarNotAvailableError) {

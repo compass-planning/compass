@@ -100,6 +100,8 @@ export class OutlookEmailProvider implements EmailProvider {
   async getGraphClient(): Promise<Client> {
     const accessToken = await this.ensureFreshToken();
     return Client.initWithMiddleware({
+      // GRAPH_API_BASE is a test-only override; unset in production
+      baseUrl: process.env.GRAPH_API_BASE || undefined,
       authProvider: {
         getAccessToken: async () => accessToken,
       },

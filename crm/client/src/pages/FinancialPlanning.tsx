@@ -1,4 +1,5 @@
 import { useSearch, useLocation, useParams } from "wouter";
+import { CreateEventModal, useStaffTimezoneExport } from "./Calendar";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useClients } from "@/hooks/use-clients";
 import { useCurrentStaff } from "@/hooks/use-users";
@@ -55,7 +56,7 @@ import {
   Users, ChevronDown, Eye, Gift, FileSignature,
   Pencil, Save, X, SlidersHorizontal,
   Flag, Building2, Wallet, ClipboardList, ArrowLeft, Search,
-  UserCircle, Activity, ChevronRight, Mic, CalendarClock,
+  UserCircle, Activity, ChevronRight, Mic, CalendarClock, Video,
 } from "lucide-react";
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
@@ -3271,6 +3272,13 @@ function IncomeSourcesTab({ clientId }: { clientId?: number }) {
 export function FinancialPlanningContent({ initialClientId, clientId: clientIdProp, noSidebar, activeTabOverride, onTabChangeOverride, t }: { initialClientId?: number; clientId?: number; noSidebar?: boolean; activeTabOverride?: string; onTabChangeOverride?: (t: any) => void }) {
   const { isFrench: isFr } = useLanguage();
   const [, navigate] = useLocation();
+  const [scheduleZoomOpen, setScheduleZoomOpen] = useState(false);
+  const staffTimezone = useStaffTimezoneExport();
+  useEffect(() => {
+    const open = () => setScheduleZoomOpen(true);
+    window.addEventListener("compass:schedule-zoom", open);
+    return () => window.removeEventListener("compass:schedule-zoom", open);
+  }, []);
   const tabs = getTabs(isFr);
   const navStructure = getNavStructure(isFr);
   const [_activeTab, _setActiveTab] = useState<TabKey>("overview");
@@ -3420,7 +3428,7 @@ const { data: plans = [] } = useClientPlans(selectedClientId ?? 0);
                 client={selectedClient as any}
                 onNavigate={(tab: string) => {
                   // The dashboard's call-to-action targets use their own names; map them onto this page's tabs.
-                  if (tab === "documents") { navigate("/calendar"); return; } // Schedule a review
+                  if (tab === "documents") { setScheduleZoomOpen(true); return; } // Schedule a review
                   const map: Record<string, TabKey> = {
                     retirementhub: "retirement", protection: "insurance", fp: "plan", taxestate: "tax",
                   };
@@ -3473,6 +3481,19 @@ const { data: plans = [] } = useClientPlans(selectedClientId ?? 0);
           </div>
         )}
       </div>
+      {scheduleZoomOpen && selectedClientId && selectedClient && (
+        <CreateEventModal
+          defaultDate={null}
+          timezone={staffTimezone}
+          onClose={() => setScheduleZoomOpen(false)}
+          defaults={{
+            clientId: selectedClientId,
+            attendee: (selectedClient as any).email || "",
+            subject: `Meeting with ${(selectedClient as any).firstName} ${(selectedClient as any).lastName}`,
+            zoom: true,
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -3561,6 +3582,15 @@ export default function FinancialPlanning() {
               <p className="text-sm font-semibold text-white truncate">
                 {selectedClient ? `${selectedClient.firstName} ${selectedClient.lastName}` : "—"}
               </p>
+              {selectedId && (
+                <button
+                  onClick={() => window.dispatchEvent(new Event("compass:schedule-zoom"))}
+                  data-testid="button-schedule-zoom"
+                  className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-white/90 bg-white/10 hover:bg-white/20 rounded-lg px-2.5 py-1.5 transition-colors"
+                >
+                  <Video className="w-3.5 h-3.5" /> {isFr ? "Planifier une réunion Zoom" : "Schedule Zoom meeting"}
+                </button>
+              )}
             </div>
           </>
         )}

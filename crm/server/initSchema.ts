@@ -55,6 +55,25 @@ CREATE TABLE IF NOT EXISTS zoom_oauth_tokens (
   encryption_key_version text NOT NULL DEFAULT 'v1',
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS zoom_meetings (
+  id serial PRIMARY KEY NOT NULL,
+  company_id integer,
+  staff_id integer NOT NULL,
+  client_id integer,
+  zoom_meeting_id text NOT NULL,
+  topic text,
+  start_local text,
+  timezone text,
+  duration_min integer,
+  join_url text,
+  calendar_event_id text,
+  status text NOT NULL DEFAULT 'scheduled',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS zoom_meetings_staff_event_idx ON zoom_meetings (staff_id, calendar_event_id);
+CREATE INDEX IF NOT EXISTS zoom_meetings_company_idx ON zoom_meetings (company_id);
+CREATE INDEX IF NOT EXISTS zoom_meetings_client_idx ON zoom_meetings (client_id);
 CREATE TABLE IF NOT EXISTS scenario_comparisons (
   id serial PRIMARY KEY NOT NULL,
   client_id integer NOT NULL,
