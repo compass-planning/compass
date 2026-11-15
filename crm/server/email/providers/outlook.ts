@@ -99,9 +99,10 @@ export class OutlookEmailProvider implements EmailProvider {
 
   async getGraphClient(): Promise<Client> {
     const accessToken = await this.ensureFreshToken();
+    // GRAPH_API_BASE is a test-only override; it must be left out entirely when unset
+    // (an explicit `baseUrl: undefined` would override the SDK default and break every call).
     return Client.initWithMiddleware({
-      // GRAPH_API_BASE is a test-only override; unset in production
-      baseUrl: process.env.GRAPH_API_BASE || undefined,
+      ...(process.env.GRAPH_API_BASE ? { baseUrl: process.env.GRAPH_API_BASE } : {}),
       authProvider: {
         getAccessToken: async () => accessToken,
       },
