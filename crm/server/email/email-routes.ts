@@ -258,7 +258,7 @@ export function registerEmailRoutes(app: Express) {
         const isHost =
           (req.session as Record<string, unknown>).userType === "host";
         res.redirect(
-          `${isHost ? "/crm/host/inbox" : "/crm/email"}?error=microsoft_auth_failed`,
+          `${isHost ? "/crm/host/inbox" : "/crm/email"}?error=microsoft_auth_failed&detail=${encodeURIComponent((err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 300))}`,
         );
       }
     },
@@ -404,7 +404,7 @@ export function registerEmailRoutes(app: Express) {
         const isHost =
           (req.session as Record<string, unknown>).userType === "host";
         res.redirect(
-          `${isHost ? "/crm/host/inbox" : "/crm/email"}?error=gmail_auth_failed`,
+          `${isHost ? "/crm/host/inbox" : "/crm/email"}?error=gmail_auth_failed&detail=${encodeURIComponent((err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 300))}`,
         );
       }
     },

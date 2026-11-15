@@ -32,6 +32,13 @@ export function EmailSetupModal({ onClose, onComplete }: { onClose: () => void; 
   const { data: emailConfig } = useQuery<EmailConfig>({ queryKey: ["/api/crm/email/config"] });
 
   const [choice, setChoice] = useState<string | null>(null);
+  const oauthErr = (() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const e = q.get("error");
+      return e ? { code: e, detail: q.get("detail") || "" } : null;
+    } catch { return null; }
+  })();
   const detected = emailConfig?.provider ?? "imap_smtp";
   const provider = choice ?? detected;
   const staffEmail = emailConfig?.staffEmail ?? "";
@@ -50,6 +57,11 @@ export function EmailSetupModal({ onClose, onComplete }: { onClose: () => void; 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" data-testid="modal-email-setup">
       <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {oauthErr && (
+          <div className="m-4 mb-0 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700" data-testid="text-oauth-error">
+            <strong>Connection failed ({oauthErr.code}).</strong> {oauthErr.detail}
+          </div>
+        )}
         <div className="p-6 border-b border-border bg-primary/5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
