@@ -239,7 +239,9 @@ function SalesManagerDashboard({ currentStaff }: { currentStaff: StaffMember }) 
 function TeamStatsCards({ advisorIds }: { advisorIds: number[] }) {
   const { data: allClients } = useClients();
   const { isFrench } = useLanguage();
-  const teamClients = allClients?.filter(c => c.advisorId && advisorIds.includes(c.advisorId)) ?? [];
+  // /api/clients is already scoped server-side to this manager's team: their advisors' clients, their own,
+  // and any they handed up and still retain. Filtering to advisorIds alone dropped the manager's own clients.
+  const teamClients = allClients ?? [];
 
   return (
     <>
