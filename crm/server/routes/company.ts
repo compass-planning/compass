@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
 import { updateCompanySettingsSchema, PLAN_DEFINITIONS } from "@shared/schema";
 import { getStaffFromSession, getCompanyId, requireRole } from "./middleware";
+import { getVisibleClients } from "../access";
 
 export const companyRouter = Router();
 
@@ -221,17 +222,16 @@ companyRouter.get(
         currentStaff.id,
       );
       const teamIds = [currentStaff.id, ...assignedAdvisors.map((a) => a.id)];
-      clientsList = await storage.getClientsByAdvisors(teamIds);
+      // Same scope as the client list (team + clients a sales manager handed up and still retains).
+      clientsList = await getVisibleClients(currentStaff);
       leadsList = await storage.getLeadsByAdvisors(teamIds);
     } else {
       const companyStaff = await storage.getStaffMembers(
         currentStaff.companyId,
       );
       const staffIds = companyStaff.map((s) => s.id);
-      clientsList =
-        staffIds.length > 0
-          ? await storage.getClientsByAdvisors(staffIds)
-          : await storage.getClients(currentStaff.companyId);
+      // Whole company, including clients with no advisor assigned (the old advisor-id filter dropped those).
+      clientsList = await getVisibleClients(currentStaff);
       leadsList = await storage.getLeads(currentStaff.companyId);
     }
 
