@@ -10,6 +10,7 @@ import { isAuthenticated } from "../auth";
 import { ownsClient } from "../fpUtils";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { syncProfileIncome, writeBackToProfile } from "../incomeSync";
 
 const r = Router();
 r.use(isAuthenticated);
@@ -20,6 +21,7 @@ r.get("/clients/:id/income-sources", async (req: any, res: Response) => {
   const staffId = req.session?.staffId ?? 0;
   if (!(await ownsClient(cid, staffId))) return res.status(404).json({ message: "Not found" });
   try {
+    await syncProfileIncome(cid); // profile income appears here automatically
     const rows = await db.select().from(incomeSources).where(eq(incomeSources.clientId, cid));
     return res.json(rows);
   } catch (e: any) {
@@ -66,6 +68,9 @@ r.put("/clients/:id/income-sources/:sourceId", async (req: any, res: Response) =
       .returning();
 
     if (!updated) return res.status(404).json({ message: "Income source not found" });
+    if ((updated as any).profileSynced && parsed.data.annualAmount !== undefined) {
+      await writeBackToProfile(cid, (updated as any).profileSynced, Number(updated.annualAmount) || 0);
+    }
     return res.json(updated);
   } catch (e: any) {
     return res.status(500).json({ message: e?.message ?? "Internal error" });
@@ -80,9 +85,12 @@ r.delete("/clients/:id/income-sources/:sourceId", async (req: any, res: Response
   if (!(await ownsClient(cid, staffId))) return res.status(404).json({ message: "Not found" });
 
   try {
-    await db
+    const [gone] = await db
       .delete(incomeSources)
-      .where(and(eq(incomeSources.id, sourceId), eq(incomeSources.clientId, cid)));
+      .where(and(eq(incomeSources.id, sourceId), eq(incomeSources.clientId, cid)))
+      .returning();
+    // Removing the profile-linked row clears that income on the profile too (otherwise it would reappear).
+    if (gone && (gone as any).profileSynced) await writeBackToProfile(cid, (gone as any).profileSynced, null);
     return res.status(204).end();
   } catch (e: any) {
     return res.status(500).json({ message: e?.message ?? "Internal error" });

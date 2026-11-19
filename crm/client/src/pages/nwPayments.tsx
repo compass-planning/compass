@@ -41,6 +41,13 @@ export interface PayFields {
   termLeftMonths: string;
   loanPayment: string;
   loanFreq: string;
+  // Vehicle (asset): balance still owing on it -> auto-creates a linked Car Loan liability
+  vehicleBalance: string;
+  // Credit Card (liability)
+  ccLimit: string;
+  ccRate: string;
+  ccPayment: string;
+  ccFreq: string;
 }
 
 export const EMPTY_PAY: PayFields = {
@@ -56,10 +63,17 @@ export const EMPTY_PAY: PayFields = {
   termLeftMonths: "",
   loanPayment: "",
   loanFreq: "monthly",
+  vehicleBalance: "",
+  ccLimit: "",
+  ccRate: "",
+  ccPayment: "",
+  ccFreq: "monthly",
 };
 
 export const isPropertyCat = (c?: string) =>
   c === "Principal Residence" || c === "Real Estate (other)";
+
+export const isVehicleCat = (c?: string) => c === "Vehicle";
 
 const num = (v: any) => {
   const n = Number(v);
@@ -121,6 +135,12 @@ export function payFromMeta(category: string, m: any): Partial<PayFields> {
     out.loanPayment =
       m.payment != null ? String(m.payment) : m.monthlyPayment != null ? String(m.monthlyPayment) : "";
     out.loanFreq = m.paymentFrequency ?? "monthly";
+  } else if (category === "Credit Card") {
+    out.ccLimit = m.creditLimit != null ? String(m.creditLimit) : "";
+    out.ccRate = m.interestRate != null ? String(m.interestRate) : "";
+    out.ccPayment =
+      m.payment != null ? String(m.payment) : m.monthlyPayment != null ? String(m.monthlyPayment) : "";
+    out.ccFreq = m.paymentFrequency ?? "monthly";
   }
   return out;
 }
@@ -161,6 +181,34 @@ export function applyPayMeta(m: Record<string, any>, category: string, f: Partia
       m.paymentFrequency = f.loanFreq || "monthly";
       m.monthlyPayment = String(r2(toMonthly(pay, f.loanFreq)));
     }
+  } else if (category === "Credit Card") {
+    delete m.monthlyPayment;
+    if (num(f.ccLimit) > 0) m.creditLimit = String(num(f.ccLimit));
+    if (f.ccRate !== "" && f.ccRate != null) m.interestRate = String(num(f.ccRate));
+    const pay = num(f.ccPayment);
+    if (pay > 0) {
+      m.payment = String(pay);
+      m.paymentFrequency = f.ccFreq || "monthly";
+      m.monthlyPayment = String(r2(toMonthly(pay, f.ccFreq)));
+    }
+  }
+  return m;
+}
+
+/** Metadata for the Car Loan liability that is auto-created / kept in sync with a Vehicle asset. */
+export function buildLinkedLoanMeta(vehicleName: string, vehicleValue: any, f: Partial<PayFields>, vehicleId?: number | string) {
+  const m: Record<string, any> = { linkedAssetName: vehicleName };
+  if (vehicleId != null) m.linkedAssetId = Number(vehicleId);
+  if (num(vehicleValue) > 0) m.vehicleValue = String(num(vehicleValue));
+  if (num(f.vehicleBalance) > 0) m.financeAmount = String(num(f.vehicleBalance));
+  if (f.interestRate !== "" && f.interestRate != null) m.interestRate = String(num(f.interestRate));
+  if (num(f.termMonths) > 0) m.termMonths = String(Math.round(num(f.termMonths)));
+  if (f.termLeftMonths !== "" && f.termLeftMonths != null) m.termLeftMonths = String(Math.round(num(f.termLeftMonths)));
+  const pay = num(f.loanPayment);
+  if (pay > 0) {
+    m.payment = String(pay);
+    m.paymentFrequency = f.loanFreq || "monthly";
+    m.monthlyPayment = String(r2(toMonthly(pay, f.loanFreq)));
   }
   return m;
 }
@@ -178,12 +226,27 @@ export function buildLinkedMortgageMeta(propName: string, f: Partial<PayFields>)
   return m;
 }
 
+/** True when `loan` is the Car Loan linked to this vehicle (by id; by name for loans made before ids were stored). */
+export function isLinkedLoan(loan: any, vehicle: { id: number; name: string }): boolean {
+  if (!loan || loan.type !== "liability" || loan.category !== "Car Loan") return false;
+  const m = loan.metadata ?? {};
+  return m.linkedAssetId != null ? Number(m.linkedAssetId) === Number(vehicle.id) : m.linkedAssetName === vehicle.name;
+}
+
 /** Small read-only chips shown under an entry's name. */
-export function payChips(category: string, m: any): { key: string; text: string }[] {
+export function payChips(category: string, m: any, value?: any): { key: string; text: string }[] {
   m = m ?? {};
   const chips: { key: string; text: string }[] = [];
   if ((category === "Mortgage" || category === "Car Loan") && num(m.payment) > 0) {
     chips.push({ key: "pay", text: `${money(num(m.payment))} ${freqShort(m.paymentFrequency)}` });
+  }
+  if (category === "Credit Card") {
+    if (num(m.creditLimit) > 0) {
+      chips.push({ key: "lim", text: `Limit ${money(num(m.creditLimit))}` });
+      if (num(value) > 0) chips.push({ key: "util", text: `${Math.round((num(value) / num(m.creditLimit)) * 100)}% used` });
+    }
+    if (m.interestRate != null && m.interestRate !== "") chips.push({ key: "rate", text: `${num(m.interestRate)}%` });
+    if (num(m.payment) > 0) chips.push({ key: "pay", text: `${money(num(m.payment))} ${freqShort(m.paymentFrequency)}` });
   }
   if (category === "Car Loan") {
     if (num(m.vehicleValue) > 0) chips.push({ key: "veh", text: `Vehicle ${money(num(m.vehicleValue))}` });
@@ -425,6 +488,89 @@ export function PaymentFields({
             >
               Estimated {money(r2(est))} {freqShort(f.loanFreq)} — use
             </button>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  if (category === "Vehicle") {
+    const pay = num(f.loanPayment);
+    const est = estimatePayment(num(f.vehicleBalance), num(f.interestRate), num(f.termMonths), f.loanFreq);
+    const termBad = num(f.termMonths) > 0 && num(f.termLeftMonths) > num(f.termMonths);
+    return (
+      <>
+        <div className="flex items-center gap-1.5">
+          <span className={LBL}>Balance owing ($):</span>
+          <Num value={f.vehicleBalance} onChange={(v) => set("vehicleBalance", v)} testId="input-vehicle-balance" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={LBL}>Interest rate (%):</span>
+          <Num value={f.interestRate} onChange={(v) => set("interestRate", v)} testId="input-vehicle-rate" className="w-20" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={LBL}>Term (months):</span>
+          <Num value={f.termMonths} onChange={(v) => set("termMonths", v)} testId="input-vehicle-term" className="w-20" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={LBL}>Term left (months):</span>
+          <Num value={f.termLeftMonths} onChange={(v) => set("termLeftMonths", v)} testId="input-vehicle-term-left" className="w-20" />
+          {termBad && (
+            <span className="text-[10px] text-red-500" data-testid="text-vehicle-term-warning">
+              can't exceed the term
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={LBL}>Payment ($):</span>
+          <Num value={f.loanPayment} onChange={(v) => set("loanPayment", v)} testId="input-vehicle-payment" />
+          <FreqSelect value={f.loanFreq} onChange={(v) => set("loanFreq", v)} testId="select-vehicle-freq" />
+          {pay > 0 && f.loanFreq && f.loanFreq !== "monthly" && (
+            <span className="text-[10px] text-slate-400 italic" data-testid="text-vehicle-monthly-eq">
+              ≈ {money(r2(toMonthly(pay, f.loanFreq)))}/month
+            </span>
+          )}
+          {est != null && Math.abs(est - pay) > 0.005 && (
+            <button
+              type="button"
+              data-testid="button-vehicle-use-estimate"
+              onClick={() => set("loanPayment", String(r2(est)))}
+              className="text-[10px] text-cyan-600 hover:underline"
+            >
+              Estimated {money(r2(est))} {freqShort(f.loanFreq)} — use
+            </button>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  if (category === "Credit Card") {
+    const pay = num(f.ccPayment);
+    const util = num(f.ccLimit) > 0 && num(f.value) > 0 ? Math.round((num(f.value) / num(f.ccLimit)) * 100) : null;
+    return (
+      <>
+        <div className="flex items-center gap-1.5">
+          <span className={LBL}>Credit limit ($):</span>
+          <Num value={f.ccLimit} onChange={(v) => set("ccLimit", v)} testId="input-cc-limit" />
+          {util != null && (
+            <span className="text-[10px] text-slate-400 italic" data-testid="text-cc-utilization">
+              {util}% used
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={LBL}>Interest rate (%):</span>
+          <Num value={f.ccRate} onChange={(v) => set("ccRate", v)} testId="input-cc-rate" className="w-20" />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={LBL}>Payment, if any ($):</span>
+          <Num value={f.ccPayment} onChange={(v) => set("ccPayment", v)} testId="input-cc-payment" />
+          <FreqSelect value={f.ccFreq} onChange={(v) => set("ccFreq", v)} testId="select-cc-freq" />
+          {pay > 0 && f.ccFreq && f.ccFreq !== "monthly" && (
+            <span className="text-[10px] text-slate-400 italic" data-testid="text-cc-monthly-eq">
+              ≈ {money(r2(toMonthly(pay, f.ccFreq)))}/month
+            </span>
           )}
         </div>
       </>

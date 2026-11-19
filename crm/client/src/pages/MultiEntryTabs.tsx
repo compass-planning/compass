@@ -14,6 +14,9 @@ import {
   PaymentFields,
   EMPTY_PAY,
   isPropertyCat,
+  isVehicleCat,
+  buildLinkedLoanMeta,
+  isLinkedLoan,
   payFromMeta,
   applyPayMeta,
   buildLinkedMortgageMeta,
@@ -126,6 +129,7 @@ const  PROVINCES  = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE",
 const NW_ASSET_CATS = [
   "Principal Residence",
   "Real Estate (other)",
+  "Vehicle",
   "RRSP",
   "TFSA",
   "Non-Registered",
@@ -137,6 +141,7 @@ const NW_ASSET_CATS = [
 const NW_ASSET_COLORS: Record<string, string> = {
   "Principal Residence": "#22d3ee",
   "Real Estate (other)": "#60a5fa",
+  Vehicle: "#f59e0b",
   RRSP: "#34d399",
   TFSA: "#fbbf24",
   "Non-Registered": "#c084fc",
@@ -740,13 +745,18 @@ function ExtraFields({
     );
   }
 
-  if (isPropertyCat(draft.category) || draft.category === "Mortgage" || draft.category === "Car Loan") {
+  if (isPropertyCat(draft.category) || isVehicleCat(draft.category) || draft.category === "Mortgage" || draft.category === "Car Loan" || draft.category === "Credit Card") {
     elems.push(
       <div key="payments" className="flex flex-wrap items-center gap-3">
         <PaymentFields category={draft.category} f={draft} set={(k, v) => onChange(k as keyof NWDraft, v)} />
         {isPropertyCat(draft.category) && Number(draft.mortgageBalance) > 0 && (
           <span className="text-[10px] text-[var(--accent-cyan)] italic">
             {ct("netWorth.linkedMortgage")}
+          </span>
+        )}
+        {isVehicleCat(draft.category) && Number(draft.vehicleBalance) > 0 && (
+          <span className="text-[10px] text-[var(--accent-cyan)] italic" data-testid="text-linked-car-loan">
+            A linked Car Loan liability is created automatically
           </span>
         )}
       </div>
@@ -1055,7 +1065,14 @@ const SELECT_CLS =
               ? { mortgageBalance: String(Number(lk.value)), ...payFromMeta("Mortgage", lk.metadata) }
               : {};
           })()
-        : {}),
+        : isVehicleCat(cat)
+          ? (() => {
+              const lk = entries.find((x) => isLinkedLoan(x, e));
+              return lk
+                ? { vehicleBalance: String(Number(lk.value)), ...payFromMeta("Car Loan", lk.metadata) }
+                : {};
+            })()
+          : {}),
     });
   }
 
@@ -1144,6 +1161,29 @@ const SELECT_CLS =
           });
         }
       }
+      // Same for a Vehicle: keep its linked Car Loan liability in sync
+      if (isVehicleCat(editForm.category)) {
+        const orig = entries.find((x) => x.id === editingId);
+        const linked = orig ? entries.find((x) => isLinkedLoan(x, orig)) : undefined;
+        const bal = Number(editForm.vehicleBalance || 0);
+        const loanMeta = buildLinkedLoanMeta(String(editDisplayName), editRolledValue, editForm, editingId ?? undefined);
+        if (bal > 0) {
+          const body = {
+            type: "liability",
+            category: "Car Loan",
+            name: `Car Loan — ${editDisplayName}`,
+            owner,
+            value: String(bal),
+            notes: `Linked to ${editDisplayName}`,
+            metadata: loanMeta,
+          };
+          if (linked) await api.put(`/api/crm/net-worth/${linked.id}`, body);
+          else await api.post(`/api/crm/clients/${clientId}/net-worth`, body);
+        } else if (linked) {
+          // Balance cleared (paid off): the linked loan goes away with it
+          await api.delete(`/api/crm/net-worth/${linked.id}`);
+        }
+      }
       setEditingId(null);
       setEditForm({});
       await load();
@@ -1194,7 +1234,7 @@ const SELECT_CLS =
             : isProperty && !Number(d.value || 0) && Number(d.purchasePrice || 0) > 0
               ? d.purchasePrice
               : d.value;
-          await api.post(`/api/crm/clients/${clientId}/net-worth`, {
+          const createdAsset: any = await api.post(`/api/crm/clients/${clientId}/net-worth`, {
             type: d.type,
             category: d.category,
             name: propName,
@@ -1213,6 +1253,17 @@ const SELECT_CLS =
               value: String(mortgageVal),
               notes: `Linked to ${propName}`,
               metadata: mortgageMeta,
+            });
+          }
+          if (isVehicleCat(d.category) && Number(d.vehicleBalance || 0) > 0) {
+            await api.post(`/api/crm/clients/${clientId}/net-worth`, {
+              type: "liability",
+              category: "Car Loan",
+              name: `Car Loan — ${propName}`,
+              owner,
+              value: String(Number(d.vehicleBalance)),
+              notes: `Linked to ${propName}`,
+              metadata: buildLinkedLoanMeta(propName, assetValue, d, createdAsset?.id),
             });
           }
           // Auto-create debt entry if checkbox checked
@@ -1262,7 +1313,7 @@ const SELECT_CLS =
           Spousal · {m.contributor}
         </span>
       );
-    if (m.linkedAssetName && entry.category === "Mortgage")
+    if (m.linkedAssetName && (entry.category === "Mortgage" || entry.category === "Car Loan"))
       chips.push(
         <span
           key="lnk"
@@ -1301,7 +1352,7 @@ const SELECT_CLS =
         </span>
       );
     }
-    for (const c of payChips(entry.category, m))
+    for (const c of payChips(entry.category, m, entry.value))
       chips.push(
         <span
           key={c.key}
@@ -1777,8 +1828,10 @@ const SELECT_CLS =
                           </>
                         )}
                         {(isPropertyCat(editForm.category) ||
+                          isVehicleCat(editForm.category) ||
                           editForm.category === "Mortgage" ||
-                          editForm.category === "Car Loan") && (
+                          editForm.category === "Car Loan" ||
+                          editForm.category === "Credit Card") && (
                           <PaymentFields
                             category={editForm.category ?? ""}
                             f={editForm as any}

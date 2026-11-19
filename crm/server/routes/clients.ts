@@ -6,7 +6,8 @@ import { eq, inArray } from "drizzle-orm";
 import { api } from "@shared/routes";
 import { children, documents, activities, insertClientSchema, advisorAssignments } from "@shared/schema";
 import { isAuthenticated } from "../auth";
-import { getVisibleClients, canDeleteClients, canViewFinancial, redactClientForRole, stripFinancialClientFields } from "../access";
+import { syncProfileIncome } from "../incomeSync";
+import { retainedByAfterAssign, getVisibleClients, canDeleteClients, canViewFinancial, redactClientForRole, stripFinancialClientFields } from "../access";
 import { deleteClientCascade } from "../clientDelete";
 import {
   getStaffFromSession, getCompanyId, denyHostUsers,
@@ -56,10 +57,11 @@ clientsRouter.post("/api/clients", isAuthenticated, async (req: any, res) => {
     }
     if (!(await validateClientAdvisorAssignment(req, res, advisorId))) return;
     const companyId = await getCompanyId(req);
-    const client = await storage.createClient({ ...input, advisorId, companyId });
+    const client = await storage.createClient({ ...input, advisorId, companyId, retainedByStaffId: await retainedByAfterAssign(caller, advisorId) } as any);
     if (client.spouseId) {
       await storage.updateClient(client.spouseId, { spouseId: client.id });
     }
+    await syncProfileIncome(client.id);
     res.status(201).json(redactClientForRole(caller?.role, client));
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -83,7 +85,11 @@ clientsRouter.put("/api/clients/:id", isAuthenticated, async (req: any, res) => 
     if ((input as any).advisorId !== undefined && (input as any).advisorId !== existing.advisorId && !(await validateClientAdvisorAssignment(req, res, (input as any).advisorId))) return;
     const oldSpouseId = existing.spouseId;
     const newSpouseId = input.spouseId !== undefined ? input.spouseId : oldSpouseId;
-    const client = await storage.updateClient(clientId, input);
+    const putUpdate: any = { ...input };
+    if ((input as any).advisorId !== undefined && (input as any).advisorId !== existing.advisorId) {
+      putUpdate.retainedByStaffId = await retainedByAfterAssign(await getStaffFromSession(req), (input as any).advisorId);
+    }
+    const client = await storage.updateClient(clientId, putUpdate);
     if (oldSpouseId !== newSpouseId) {
       if (oldSpouseId) await storage.updateClient(oldSpouseId, { spouseId: null });
       if (newSpouseId) {
@@ -94,6 +100,7 @@ clientsRouter.put("/api/clients/:id", isAuthenticated, async (req: any, res) => 
         await storage.updateClient(newSpouseId, { spouseId: clientId });
       }
     }
+    await syncProfileIncome(clientId);
     res.json(redactClientForRole(callerRole, client));
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -116,7 +123,12 @@ clientsRouter.patch("/api/clients/:id", isAuthenticated, async (req: any, res) =
     const callerRole = (await getStaffFromSession(req))?.role;
     const input = insertClientSchema.partial().parse(stripFinancialClientFields(callerRole, req.body));
     if (input.advisorId !== undefined && input.advisorId !== existing.advisorId && !(await validateClientAdvisorAssignment(req, res, input.advisorId))) return;
-    const client = await storage.updateClient(clientId, input);
+    const patchUpdate: any = { ...input };
+    if (input.advisorId !== undefined && input.advisorId !== existing.advisorId) {
+      patchUpdate.retainedByStaffId = await retainedByAfterAssign(await getStaffFromSession(req), input.advisorId);
+    }
+    const client = await storage.updateClient(clientId, patchUpdate);
+    await syncProfileIncome(clientId);
     res.json(redactClientForRole(callerRole, client));
   } catch (err) {
     if (err instanceof z.ZodError) {

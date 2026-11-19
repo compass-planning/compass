@@ -254,6 +254,9 @@ export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id"),
   advisorId: integer("advisor_id"),
+  // Sales manager who handed this client up to someone outside their team (e.g. the GM). They keep
+  // seeing it until someone else reassigns the client. Server-managed; never accepted from request bodies.
+  retainedByStaffId: integer("retained_by_staff_id"),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull(),
@@ -784,10 +787,12 @@ export const incomeSources = pgTable("income_sources", {
   isSurvivorBenefit: boolean("is_survivor_benefit").notNull().default(false),
   survivorPercentage: numeric("survivor_percentage", { precision: 5, scale: 2 }), // e.g. 60 = 60%
   notes: text("notes"),
+  // 'primary' | 'spouse' when this row mirrors the client profile's annual income (server-managed)
+  profileSynced: text("profile_synced"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertIncomeSourceSchema = createInsertSchema(incomeSources).omit({ id: true, createdAt: true });
+export const insertIncomeSourceSchema = createInsertSchema(incomeSources).omit({ id: true, createdAt: true, profileSynced: true });
 export type IncomeSource = typeof incomeSources.$inferSelect;
 export type InsertIncomeSource = z.infer<typeof insertIncomeSourceSchema>;
 
@@ -1429,7 +1434,7 @@ export const insertStaffSchema = createInsertSchema(staff).omit({ id: true, crea
 export const insertStaffDocumentSchema = createInsertSchema(staffDocuments).omit({ id: true, createdAt: true });
 export const insertStaffChildSchema = createInsertSchema(staffChildren).omit({ id: true });
 export const insertAdvisorAssignmentSchema = createInsertSchema(advisorAssignments).omit({ id: true });
-export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true, retainedByStaffId: true });
 export const insertChildSchema = createInsertSchema(children).omit({ id: true });
 export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, createdAt: true });
 export const insertActivitySchema = createInsertSchema(activities).omit({ id: true, createdAt: true });

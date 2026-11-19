@@ -12,12 +12,12 @@
  * live in one place. Company isolation is always enforced first.
  */
 import { db } from "./db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { advisorAssignments, clients, staff } from "@shared/schema";
 
 export type StaffRow = typeof staff.$inferSelect;
 export type ClientRow = typeof clients.$inferSelect;
-export type ClientScope = { all: true } | { all: false; advisorIds: Set<number> };
+export type ClientScope = { all: true } | { all: false; advisorIds: Set<number>; retainedBy?: number };
 
 const ALL_ROLES = new Set(["general_manager", "office_admin"]);
 const NO_FINANCIAL_ROLES = new Set(["office_admin", "advisor_admin"]);
@@ -46,13 +46,26 @@ export async function getTeamIds(member: Pick<StaffRow, "id" | "role">): Promise
 
 export async function getClientScope(member: Pick<StaffRow, "id" | "role">): Promise<ClientScope> {
   if (ALL_ROLES.has(member.role)) return { all: true };
-  if (member.role === "sales_manager" || member.role === "advisor_admin") return { all: false, advisorIds: await getTeamIds(member) };
+  // Sales managers also keep clients they handed up (to the GM, say) until someone reassigns them.
+  if (member.role === "sales_manager") return { all: false, advisorIds: await getTeamIds(member), retainedBy: member.id };
+  if (member.role === "advisor_admin") return { all: false, advisorIds: await getTeamIds(member) };
   return { all: false, advisorIds: new Set([member.id]) };
 }
 
-export function clientInScope(scope: ClientScope, client: Pick<ClientRow, "advisorId">): boolean {
+export function clientInScope(scope: ClientScope, client: Pick<ClientRow, "advisorId"> & { retainedByStaffId?: number | null }): boolean {
   if (scope.all) return true;
+  if (scope.retainedBy != null && client.retainedByStaffId === scope.retainedBy) return true;
   return client.advisorId != null && scope.advisorIds.has(client.advisorId);
+}
+
+/**
+ * Value for clients.retained_by_staff_id after an assignment. A sales manager who hands a client to someone
+ * outside their own team keeps seeing it; any other (re)assignment clears it, so the GM reassigning ends it.
+ */
+export async function retainedByAfterAssign(caller: StaffRow | null | undefined, newAdvisorId: number | null | undefined): Promise<number | null> {
+  if (!caller || caller.role !== "sales_manager" || newAdvisorId == null) return null;
+  const team = await getTeamIds(caller);
+  return team.has(newAdvisorId) ? null : caller.id;
 }
 
 /** Company isolation first, then the role's scope. */
@@ -65,8 +78,11 @@ export async function getVisibleClients(member: StaffRow): Promise<ClientRow[]> 
   if (!member.companyId) return [];
   const scope = await getClientScope(member);
   if (scope.all) return db.select().from(clients).where(eq(clients.companyId, member.companyId));
-  if (scope.advisorIds.size === 0) return [];
-  return db.select().from(clients).where(and(eq(clients.companyId, member.companyId), inArray(clients.advisorId, [...scope.advisorIds])));
+  const mine = scope.advisorIds.size ? inArray(clients.advisorId, [...scope.advisorIds]) : undefined;
+  const retained = scope.retainedBy != null ? eq(clients.retainedByStaffId, scope.retainedBy) : undefined;
+  const visible = mine && retained ? or(mine, retained) : (mine ?? retained);
+  if (!visible) return [];
+  return db.select().from(clients).where(and(eq(clients.companyId, member.companyId), visible));
 }
 
 /** Active staff in the caller's company that the caller may assign a client / deal to. */
