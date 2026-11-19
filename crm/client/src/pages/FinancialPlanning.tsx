@@ -104,8 +104,8 @@ type NavEntry =
 
 function getNavStructure(isFr: boolean): NavEntry[] {
   return [
-  { type: "item", key: "overview" },
   { type: "item", key: "profile" },
+  { type: "item", key: "overview" },
   { type: "item", key: "dashboard" },
   { type: "group", label: isFr ? "Détails financiers" : "Financial Details", items: [
     { key: "networth" }, { key: "income" }, { key: "goals" }, { key: "debt" }, { key: "expenses" },

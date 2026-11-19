@@ -48,6 +48,9 @@ export interface PayFields {
   ccRate: string;
   ccPayment: string;
   ccFreq: string;
+  // RRSP / TFSA / Non-Registered: regular contribution
+  contribAmount: string;
+  contribFreq: string;
 }
 
 export const EMPTY_PAY: PayFields = {
@@ -68,12 +71,15 @@ export const EMPTY_PAY: PayFields = {
   ccRate: "",
   ccPayment: "",
   ccFreq: "monthly",
+  contribAmount: "",
+  contribFreq: "monthly",
 };
 
 export const isPropertyCat = (c?: string) =>
   c === "Principal Residence" || c === "Real Estate (other)";
 
 export const isVehicleCat = (c?: string) => c === "Vehicle";
+export const isAccountCat = (c?: string) => c === "RRSP" || c === "TFSA" || c === "Non-Registered";
 
 const num = (v: any) => {
   const n = Number(v);
@@ -135,6 +141,9 @@ export function payFromMeta(category: string, m: any): Partial<PayFields> {
     out.loanPayment =
       m.payment != null ? String(m.payment) : m.monthlyPayment != null ? String(m.monthlyPayment) : "";
     out.loanFreq = m.paymentFrequency ?? "monthly";
+  } else if (isAccountCat(category)) {
+    out.contribAmount = m.contribution != null ? String(m.contribution) : "";
+    out.contribFreq = m.contributionFrequency ?? "monthly";
   } else if (category === "Credit Card") {
     out.ccLimit = m.creditLimit != null ? String(m.creditLimit) : "";
     out.ccRate = m.interestRate != null ? String(m.interestRate) : "";
@@ -180,6 +189,13 @@ export function applyPayMeta(m: Record<string, any>, category: string, f: Partia
       m.payment = String(pay);
       m.paymentFrequency = f.loanFreq || "monthly";
       m.monthlyPayment = String(r2(toMonthly(pay, f.loanFreq)));
+    }
+  } else if (isAccountCat(category)) {
+    const c = num(f.contribAmount);
+    if (c > 0) {
+      m.contribution = String(c);
+      m.contributionFrequency = f.contribFreq || "monthly";
+      m.monthlyContribution = String(r2(toMonthly(c, f.contribFreq)));
     }
   } else if (category === "Credit Card") {
     delete m.monthlyPayment;
@@ -239,6 +255,9 @@ export function payChips(category: string, m: any, value?: any): { key: string; 
   const chips: { key: string; text: string }[] = [];
   if ((category === "Mortgage" || category === "Car Loan") && num(m.payment) > 0) {
     chips.push({ key: "pay", text: `${money(num(m.payment))} ${freqShort(m.paymentFrequency)}` });
+  }
+  if (isAccountCat(category) && num(m.contribution) > 0) {
+    chips.push({ key: "contrib", text: `${money(num(m.contribution))} ${freqShort(m.contributionFrequency)} contribution` });
   }
   if (category === "Credit Card") {
     if (num(m.creditLimit) > 0) {
@@ -491,6 +510,27 @@ export function PaymentFields({
           )}
         </div>
       </>
+    );
+  }
+
+  if (isAccountCat(category)) {
+    const c = num(f.contribAmount);
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={LBL}>Regular contribution ($):</span>
+        <Num value={f.contribAmount} onChange={(v) => set("contribAmount", v)} testId="input-contribution" />
+        <FreqSelect value={f.contribFreq} onChange={(v) => set("contribFreq", v)} testId="select-contribution-freq" />
+        {c > 0 && f.contribFreq && f.contribFreq !== "monthly" && (
+          <span className="text-[10px] text-slate-400 italic" data-testid="text-contribution-monthly-eq">
+            ≈ {money(r2(toMonthly(c, f.contribFreq)))}/month
+          </span>
+        )}
+        {c > 0 && (
+          <span className="text-[10px] text-slate-400 italic" data-testid="text-contribution-annual">
+            {money(r2(toMonthly(c, f.contribFreq) * 12))}/year
+          </span>
+        )}
+      </div>
     );
   }
 

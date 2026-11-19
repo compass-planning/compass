@@ -15,6 +15,7 @@ import {
   EMPTY_PAY,
   isPropertyCat,
   isVehicleCat,
+  isAccountCat,
   buildLinkedLoanMeta,
   isLinkedLoan,
   payFromMeta,
@@ -172,6 +173,10 @@ const DEBT_TYPES = [
 ];
 const  PENSION_TYPES  = ["DBPP", "DCPP", "Self-Directed", "Matching Contributions"];
 const HOLDING_TYPES = ["Mutual Funds", "Stock", "GIC", "Annuity"];
+const fundsTotal = (funds?: { value?: any }[]) => (funds ?? []).reduce((s, h) => s + (Number(h.value) || 0), 0);
+/** True when a Mutual Funds account takes its balance from the fund values; otherwise the balance is typed in directly. */
+const fundsRollup = (h: { holdingType?: string; funds?: { value?: any }[] }) =>
+  h.holdingType === "Mutual Funds" && fundsTotal(h.funds) > 0;
  export interface MutualFundOption {
   family: string;
   name: string;
@@ -745,7 +750,7 @@ function ExtraFields({
     );
   }
 
-  if (isPropertyCat(draft.category) || isVehicleCat(draft.category) || draft.category === "Mortgage" || draft.category === "Car Loan" || draft.category === "Credit Card") {
+  if (isPropertyCat(draft.category) || isVehicleCat(draft.category) || isAccountCat(draft.category) || draft.category === "Mortgage" || draft.category === "Car Loan" || draft.category === "Credit Card") {
     elems.push(
       <div key="payments" className="flex flex-wrap items-center gap-3">
         <PaymentFields category={draft.category} f={draft} set={(k, v) => onChange(k as keyof NWDraft, v)} />
@@ -1107,8 +1112,8 @@ const SELECT_CLS =
   async function saveEdit() {
      const editFunds: FundHolding[] = (editForm as any).funds ?? [];
     const isEditMutualFunds = editForm.holdingType === "Mutual Funds" && editFunds.length > 0;
-    const editRolledValue = isEditMutualFunds
-      ? String(editFunds.reduce((s, h) => s + (Number(h.value) || 0), 0))
+    const editRolledValue = isEditMutualFunds && fundsTotal(editFunds) > 0
+      ? String(fundsTotal(editFunds))
       : editForm.value; if (!editingId || ! editRolledValue ) return;
     setSaving(true);
     try {
@@ -1200,8 +1205,7 @@ const SELECT_CLS =
         Number(d.purchasePrice || 0) > 0 ||
         Number(d.mortgageBalance || 0) > 0
       );
-     if (d.holdingType === "Mutual Funds")
-      return d.funds.length > 0 && d.funds.some((h) => Number(h.value) > 0); return Boolean(d.value);
+     if (fundsRollup(d)) return true; return Boolean(d.value);
   }
 
   async function saveAll() {
@@ -1222,14 +1226,14 @@ const SELECT_CLS =
             : null;
           const propName =  fundDisplayName || d.name || d.category ;
           // Roll-up value from individual fund values when in mutual-fund mode
-          const rolledValue = isMutualFunds
-            ? String(d.funds.reduce((s, h) => s + (Number(h.value) || 0), 0))
+          const rolledValue = isMutualFunds && fundsTotal(d.funds) > 0
+            ? String(fundsTotal(d.funds))
             : undefined ;
           const isProperty =
             d.category === "Principal Residence" || d.category === "Real Estate (other)";
           const mortgageVal = Number(d.mortgageBalance || 0);
           const assetValue =
-             isMutualFunds
+             rolledValue !== undefined
             ? rolledValue
             : isProperty && !Number(d.value || 0) && Number(d.purchasePrice || 0) > 0
               ? d.purchasePrice
@@ -1267,7 +1271,7 @@ const SELECT_CLS =
             });
           }
           // Auto-create debt entry if checkbox checked
-          if (d.type === "liability" && d.includeInDebt && Number(d.value || 0) > 0) {
+          if (d.type === "liability" && d.category !== "Credit Card" && d.includeInDebt && Number(d.value || 0) > 0) {
             await api.post(`/api/crm/clients/${clientId}/debt`, {
               name: propName,
               category: d.category,
@@ -1515,21 +1519,12 @@ const SELECT_CLS =
                         <div className="flex gap-1">
                           <InlineInput
                             type="number"
-                            value={d. holdingType === "Mutual Funds"
-                                ? String(
-                                    d.funds.reduce((s, h) => s + (Number(h.value) || 0), 0) || ""
-                                  )
-                                : d. value}
-                            onChange={(v) =>  {
-                              if (d.holdingType !== "Mutual Funds") updateDraft(draftIdx, "value", v) ;
-                            } }
-                            placeholder= {d.holdingType === "Mutual Funds" ? "Auto from funds" : "0"
-                           }
-                            className={
-                              d.holdingType === "Mutual Funds"
-                                ? "bg-slate-50 text-slate-500 cursor-default"
-                                : ""
-                            } />
+                            value={fundsRollup(d) ? String(fundsTotal(d.funds)) : d.value}
+                            onChange={(v) => {
+                              if (!fundsRollup(d)) updateDraft(draftIdx, "value", v);
+                            }}
+                            placeholder={fundsRollup(d) ? "Auto from funds" : "0"}
+                            className={fundsRollup(d) ? "bg-slate-50 text-slate-500 cursor-default" : ""} />
                           <button
                             onClick={() => removeDraft(draftIdx)}
                             className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0"
@@ -1560,7 +1555,11 @@ const SELECT_CLS =
                           }}
                         />
                       </div>
-                    )} {!isAssets && (
+                    )} {!isAssets && d.category === "Credit Card" && (
+                      <p className="text-[11px] text-slate-400 mt-1" data-testid="text-card-in-debt">
+                        Credit cards are listed in the Debt tab automatically.
+                      </p>
+                    )} {!isAssets && d.category !== "Credit Card" && (
                       <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mt-1">
                         <input
                           type="checkbox"
@@ -1654,25 +1653,12 @@ const SELECT_CLS =
                           </label>
                           <InlineInput
                             type="number"
-                            value={editForm. holdingType === "Mutual Funds"
-                                ? String(
-                                    ((editForm as any).funds ?? []).reduce(
-                                      (s: number, h: FundHolding) => s + (Number(h.value) || 0),
-                                      0
-                                    ) || ""
-                                  )
-                                : (editForm. value ?? "" ) }
-                            onChange={(v) =>  {
-                              if (editForm.holdingType !== "Mutual Funds") setEditForm((f) => ({ ...f, value: v })) ;
-                            } }
-                            placeholder= {
-                              editForm.holdingType === "Mutual Funds" ? "Auto from funds" : "0"
-                           }
-                            className={
-                              editForm.holdingType === "Mutual Funds"
-                                ? "bg-slate-50 text-slate-500 cursor-default"
-                                : ""
-                            } />
+                            value={fundsRollup(editForm as any) ? String(fundsTotal((editForm as any).funds)) : (editForm.value ?? "")}
+                            onChange={(v) => {
+                              if (!fundsRollup(editForm as any)) setEditForm((f) => ({ ...f, value: v }));
+                            }}
+                            placeholder={fundsRollup(editForm as any) ? "Auto from funds" : "0"}
+                            className={fundsRollup(editForm as any) ? "bg-slate-50 text-slate-500 cursor-default" : ""} />
                         </div>
                       </div>
                        {/* Multi-fund selector for edit form */}
@@ -1829,6 +1815,7 @@ const SELECT_CLS =
                         )}
                         {(isPropertyCat(editForm.category) ||
                           isVehicleCat(editForm.category) ||
+                          isAccountCat(editForm.category) ||
                           editForm.category === "Mortgage" ||
                           editForm.category === "Car Loan" ||
                           editForm.category === "Credit Card") && (
@@ -3396,6 +3383,10 @@ interface DebtEntry {
   minimumPayment: string | null;
   payoffStrategy: string | null;
   notes: string | null;
+  debtEntryId?: number | null;
+  nwEntryId?: number | null;
+  creditLimit?: number | null;
+  source?: string;
 }
 type DebtDraft = {
   name: string;
@@ -3444,9 +3435,12 @@ export function DebtTab({ clientId }: { clientId: number }) {
     }
   }
 
-  async function del(id: number) {
+  async function del(row: DebtEntry) {
     if (!confirm("Delete?")) return;
-    await api.delete(`/api/crm/debt/${id}`);
+    // A credit card exists as both a Debt entry and a Net Worth liability; removing either removes both.
+    if (row.debtEntryId) await api.delete(`/api/crm/debt/${row.debtEntryId}`);
+    else if (row.nwEntryId) await api.delete(`/api/crm/net-worth/${row.nwEntryId}`);
+    else await api.delete(`/api/crm/debt/${row.id}`);
     await load();
   }
 
@@ -3607,7 +3601,7 @@ export function DebtTab({ clientId }: { clientId: number }) {
                     </span>
                   </TD>
                   <TD>
-                    <button onClick={() => del(d.id)} className="text-gray-300 hover:text-red-500">
+                    <button onClick={() => del(d)} data-testid={`button-delete-debt-${d.id}`} className="text-gray-300 hover:text-red-500">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </TD>

@@ -687,6 +687,8 @@ export const debtEntries = pgTable("debt_entries", {
   // ── ported from Compass Planning ──
   planId: integer("plan_id"),
   payoffStrategy: text("payoff_strategy"),
+  // Net Worth liability this credit card mirrors (server-managed)
+  nwEntryId: integer("nw_entry_id"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
