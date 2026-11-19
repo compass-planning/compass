@@ -17,7 +17,7 @@ interface Client {
 }
 
 interface Overview {
-  netWorth: number; totalAssets: number; totalLiabilities: number;
+  netWorth: number; aum?: number; totalAssets: number; totalLiabilities: number;
   totalDebt: number; retirementProjections: number; insuranceAnalyses: number;
   educationPlans: number; taxNotes: number; estateNotes: number;
   aiRecommendations: number; pendingAi: number; plans: number;
@@ -222,7 +222,7 @@ export function HouseholdQueue({ onSelect }: Props) {
     return matchName && matchProv;
   });
 
-  const totalNW = Object.values(overviews).reduce((s, o) => s + (o.netWorth || 0), 0);
+  const totalNW = Object.values(overviews).reduce((s, o) => s + (o.aum || 0), 0); // AUM = managed RRSP/TFSA/Non-Reg only
   const avgScore = filtered.length
     ? Math.round(filtered.reduce((s, c) => s + householdScore(overviews[c.id] ?? null), 0) / filtered.length)
     : 0;

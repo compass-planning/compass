@@ -172,7 +172,7 @@ const DEBT_TYPES = [
   "other",
 ];
 const  PENSION_TYPES  = ["DBPP", "DCPP", "Self-Directed", "Matching Contributions"];
-const HOLDING_TYPES = ["Mutual Funds", "Stock", "GIC", "Annuity"];
+const HOLDING_TYPES = ["Mutual Funds", "Segregated Funds", "Stock", "GIC", "Annuity"];
 const fundsTotal = (funds?: { value?: any }[]) => (funds ?? []).reduce((s, h) => s + (Number(h.value) || 0), 0);
 /** True when a Mutual Funds account takes its balance from the fund values; otherwise the balance is typed in directly. */
 const fundsRollup = (h: { holdingType?: string; funds?: { value?: any }[] }) =>
@@ -572,6 +572,8 @@ type NWDraft = {
   mortgageBalance: string; // For Principal Residence / Real Estate (other) — auto-creates a linked Mortgage liability
   mortgageMonthlyPayment: string;
   includeInDebt: boolean;
+  managedBy: string; // RRSP/TFSA/Non-Reg: who manages the account
+  managedByAdvisor: boolean; // counts toward AUM
 } & PayFields;
 
 function emptyDraft(type: "asset" | "liability"): NWDraft {
@@ -596,6 +598,8 @@ function emptyDraft(type: "asset" | "liability"): NWDraft {
     rentalIncome: "",
     rentalExpenses: "",
     includeInDebt: false,
+    managedBy: "",
+    managedByAdvisor: false,
     ...EMPTY_PAY,
   };
 }
@@ -660,6 +664,22 @@ function ExtraFields({
           ))}
         </select>
       </div>
+    );
+    elems.push(
+      <label
+        key="managedByAdvisor"
+        className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer"
+        title="Managed accounts count toward AUM"
+      >
+        <input
+          type="checkbox"
+          checked={!!draft.managedByAdvisor}
+          onChange={(e) => onChange("managedByAdvisor", e.target.checked)}
+          data-testid="checkbox-managed-by-advisor"
+          className="w-3.5 h-3.5 rounded accent-[var(--accent-cyan)]"
+        />
+        Managed by Advisor / Brokerage
+      </label>
     );
   }
 
@@ -792,6 +812,8 @@ type NWEditForm = Partial<
     rentalIncome: string;
     rentalExpenses: string ;
     funds: FundHolding[] ;
+    managedBy: string;
+    managedByAdvisor: boolean;
   }
 > &
   Partial<PayFields>;
@@ -1051,6 +1073,8 @@ const SELECT_CLS =
       monthlyPayment: m.monthlyPayment ?? "",
       respBeneficiary: m.respBeneficiary ?? "",
       holdingType: m.holdingType ?? "",
+      managedBy: m.managedBy ?? "",
+      managedByAdvisor: m.managedByAdvisor === true || m.managedByAdvisor === "true",
        funds: m.funds ?? [], jointWithSpouse: e.owner === "joint",
       stockOptionType: m.stockOptionType ?? (e.category === "ESU" ? "ESU" : "RSU"),
       propertyType: m.propertyType ?? "Family Occupied",
@@ -1089,6 +1113,10 @@ const SELECT_CLS =
       m.contributor = form.rrspContributor;
     }
     if ((form as any).monthlyPayment) m.monthlyPayment = (form as any).monthlyPayment;
+    if (isAccountCat(cat)) {
+      if ((form as any).managedBy?.trim()) m.managedBy = (form as any).managedBy.trim();
+      if ((form as any).managedByAdvisor) m.managedByAdvisor = true;
+    }
     if (["RRSP", "TFSA", "Non-Registered"].includes(cat) && form.holdingType)
        { m.holdingType = form.holdingType;
      if (form.holdingType === "Mutual Funds") {
@@ -1124,7 +1152,7 @@ const SELECT_CLS =
         ? editFunds.length === 1
           ? editFunds[0].name
           : `${editFunds.length} Mutual Funds — ${editForm.category}`
-        : editForm.name || editForm.category; await api.put(`/api/crm/net-worth/${editingId}`, {
+        : (isAccountCat(editForm.category) ? ((editForm as any).managedBy?.trim() ? `${editForm.category} — ${(editForm as any).managedBy.trim()}` : (editForm.name || editForm.category)) : editForm.name) || editForm.category; await api.put(`/api/crm/net-worth/${editingId}`, {
         category: editForm.category,
         name:  editDisplayName ,
         owner,
@@ -1224,7 +1252,7 @@ const SELECT_CLS =
               ? d.funds[0].name
               : `${d.funds.length} Mutual Funds — ${d.category}`
             : null;
-          const propName =  fundDisplayName || d.name || d.category ;
+          const propName =  fundDisplayName || (isAccountCat(d.category) ? (d.managedBy?.trim() ? `${d.category} — ${d.managedBy.trim()}` : d.category) : d.name) || d.category ;
           // Roll-up value from individual fund values when in mutual-fund mode
           const rolledValue = isMutualFunds && fundsTotal(d.funds) > 0
             ? String(fundsTotal(d.funds))
@@ -1324,6 +1352,18 @@ const SELECT_CLS =
           className= "text-[10px] bg-cyan-50 text-cyan-600 px-1.5 py-0.5 rounded font-mono" 
         >
           ↪ {m.linkedAssetName}
+        </span>
+      );
+    if (isAccountCat(entry.category) && m.managedBy)
+      chips.push(
+        <span key="mb" className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">
+          Managed by {m.managedBy}
+        </span>
+      );
+    if (isAccountCat(entry.category) && m.managedByAdvisor)
+      chips.push(
+        <span key="aum" data-testid="chip-aum" className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono">
+          AUM
         </span>
       );
     if (m.holdingType)
@@ -1497,7 +1537,14 @@ const SELECT_CLS =
                         </select>
                       </div>
                       <div>
-                        <label className={LABEL_CLS}>Name / Description</label>
+                        <label className={LABEL_CLS}>{isAccountCat(d.category) ? "Managed By:" : "Name / Description"}</label>
+                        {isAccountCat(d.category) ? (
+                          <InlineInput
+                            value={d.managedBy}
+                            onChange={(v) => updateDraft(draftIdx, "managedBy", v)}
+                            placeholder="Advisor / firm / self"
+                          />
+                        ) : (
                         <InlineInput
                           value={d. holdingType === "Mutual Funds"
                               ? d.funds.length > 0
@@ -1511,6 +1558,7 @@ const SELECT_CLS =
                               ? "bg-slate-50 text-slate-400 cursor-default"
                               : "" }
                         />
+                        )}
                       </div>
                       <div>
                         <label className={LABEL_CLS}>
@@ -1628,7 +1676,14 @@ const SELECT_CLS =
                           </select>
                         </div>
                         <div>
-                          <label className={LABEL_CLS}>Name / Description</label>
+                          <label className={LABEL_CLS}>{isAccountCat(editForm.category) ? "Managed By:" : "Name / Description"}</label>
+                          {isAccountCat(editForm.category) ? (
+                            <InlineInput
+                              value={(editForm as any).managedBy ?? ""}
+                              onChange={(v) => setEditForm((f) => ({ ...f, managedBy: v }))}
+                              placeholder="Advisor / firm / self"
+                            />
+                          ) : (
                           <InlineInput
                             value={editForm. holdingType === "Mutual Funds"
                                 ? (editForm as any).funds?.length > 0
@@ -1646,6 +1701,7 @@ const SELECT_CLS =
                                 ? "bg-slate-50 text-slate-400 cursor-default"
                                 : "" }
                           />
+                          )}
                         </div>
                         <div>
                           <label className={LABEL_CLS}>
@@ -1736,6 +1792,18 @@ const SELECT_CLS =
                                 ))}
                               </select>
                             </div>
+                            <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer" title="Managed accounts count toward AUM">
+                              <input
+                                type="checkbox"
+                                checked={!!(editForm as any).managedByAdvisor}
+                                onChange={(ev) =>
+                                  setEditForm((f) => ({ ...f, managedByAdvisor: ev.target.checked }))
+                                }
+                                data-testid="checkbox-managed-by-advisor-edit"
+                                className="w-3.5 h-3.5 rounded"
+                              />
+                              Managed by Advisor / Brokerage
+                            </label>
                             {editForm.category === "Non-Registered" && spouseName && (
                               <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
                                 <input

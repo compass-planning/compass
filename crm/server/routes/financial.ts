@@ -23,6 +23,7 @@ import {
 } from "@shared/schema";
 import { isAuthenticated } from "../auth";
 import { safe, ownsClient, ownsPlan } from "../fpUtils";
+import { sumAum } from "../aum";
 import { mirrorNwCardToDebt, mirrorDebtCardToNw, removeDebtForNw, removeNwForDebt, ensureCardLinks } from "../debtLink";
 
 // Debt writes: `type` is the Debt tab's name for category; the link id is server-managed.
@@ -61,7 +62,7 @@ r.get("/clients/:id/overview", async (req: any, res: Response) => {
   const liabilities = nw.filter(e => e.type === "liability").reduce((s, e) => s + Number(e.value), 0);
   const totalDebt   = debt.reduce((s, d) => s + Number(d.balance), 0);
   res.json({
-    netWorth: assets - liabilities, totalAssets: assets, totalLiabilities: liabilities, totalDebt,
+    netWorth: assets - liabilities, totalAssets: assets, totalLiabilities: liabilities, totalDebt, aum: sumAum(nw as any),
     retirementProjections: ret.length, insuranceAnalyses: ins.length,
     educationPlans: edu.length, taxNotes: tax.length, estateNotes: estate.length,
     aiRecommendations: ai.length, pendingAi: ai.filter(a => a.status === "pending").length,

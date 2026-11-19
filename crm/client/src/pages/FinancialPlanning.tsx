@@ -69,8 +69,8 @@ type TabKey = "profile" | "overview"  | "plan" | "dashboard" | "networth"
 
 function getTabs(isFr: boolean): { key: TabKey; label: string; icon: typeof Target }[] {
   return [
-  { key: "profile",     label: isFr ? "Profil" : "Profile",        icon: UserCircle },
   { key: "overview",    label: isFr ? "Aperçu" : "Overview",       icon: Target },
+  { key: "profile",     label: isFr ? "Profil" : "Profile",        icon: UserCircle },
   { key: "plan",        label: isFr ? "Plan financier" : "Financial Plan", icon: Sparkles },
   { key: "dashboard",   label: isFr ? "Tableau de bord" : "Dashboard",      icon: BarChart3 },
   { key: "networth",    label: isFr ? "Valeur nette" : "Net Worth",      icon: DollarSign },
@@ -104,8 +104,8 @@ type NavEntry =
 
 function getNavStructure(isFr: boolean): NavEntry[] {
   return [
-  { type: "item", key: "profile" },
   { type: "item", key: "overview" },
+  { type: "item", key: "profile" },
   { type: "item", key: "dashboard" },
   { type: "group", label: isFr ? "Détails financiers" : "Financial Details", items: [
     { key: "networth" }, { key: "income" }, { key: "goals" }, { key: "debt" }, { key: "expenses" },

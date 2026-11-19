@@ -5,6 +5,7 @@ import { isAuthenticated } from "../auth";
 import { updateCompanySettingsSchema, PLAN_DEFINITIONS } from "@shared/schema";
 import { getStaffFromSession, getCompanyId, requireRole } from "./middleware";
 import { getVisibleClients } from "../access";
+import { aumForClients } from "../aum";
 
 export const companyRouter = Router();
 
@@ -235,13 +236,8 @@ companyRouter.get(
       leadsList = await storage.getLeads(currentStaff.companyId);
     }
 
-    let totalAUM = 0;
-    for (const client of clientsList) {
-      const prods = await storage.getProductsByClient(client.id);
-      for (const p of prods) {
-        if (p.status === "active") totalAUM += parseFloat(p.value) || 0;
-      }
-    }
+    // AUM = RRSP/TFSA/Non-Registered accounts marked "managed by Advisor / Brokerage" (see server/aum.ts).
+    const totalAUM = await aumForClients(clientsList.map((c) => c.id));
 
     res.json({
       totalAUM,

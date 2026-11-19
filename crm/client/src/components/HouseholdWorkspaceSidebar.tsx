@@ -180,7 +180,6 @@ export function HouseholdWorkspaceSidebar({ client, activeSection, onSectionChan
       icon: Brain, color: "text-violet-600", bg: "bg-violet-50",
       defaultOpen: true,
       items: [
-        { key: "fp.overview"   as WorkspaceSection, label: t("nav.overview"),   icon: Lightbulb },
         { key: "fp.networth"   as WorkspaceSection, label: t("nav.netWorth"),   icon: DollarSign, badge: overview?.netWorth === 0 ? 1 : 0 },
         { key: "fp.goals"      as WorkspaceSection, label: t("nav.goals"),      icon: Target },
         { key: "fp.retirement" as WorkspaceSection, label: t("nav.retirement"), icon: PiggyBank, badge: overview?.retirementProjections === 0 ? 1 : 0 },
@@ -267,9 +266,22 @@ export function HouseholdWorkspaceSidebar({ client, activeSection, onSectionChan
         </div>
       </div>
 
-      {/* Profile link */}
-      <div className="px-3 py-2 border-b border-slate-100">
+      {/* Overview + Profile links (Overview first) */}
+      <div className="px-3 py-2 border-b border-slate-100 space-y-0.5">
         <button
+          onClick={() => onSectionChange("fp.overview")}
+          data-testid="nav-overview"
+          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+            activeSection === "fp.overview"
+              ? "bg-violet-50 text-violet-700 font-semibold"
+              : "text-slate-500 hover:bg-slate-50"
+          }`}
+        >
+          <Lightbulb className="w-3.5 h-3.5" />
+          {t("nav.overview")}
+        </button>
+        <button
+          data-testid="nav-profile"
           onClick={() => onSectionChange("profile")}
           className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
             activeSection === "profile"
