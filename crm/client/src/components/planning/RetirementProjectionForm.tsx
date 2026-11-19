@@ -979,30 +979,42 @@ export function RetirementTab({
   // Build seeded defaults for primary or spouse
   const buildSeeds = (person: "primary" | "spouse") => {
     if (!clientData) return {};
-    const nwSum = (category: string, owner?: string) =>
+    // A person's accounts = what they own outright + half of anything held jointly.
+    const nwSum = (category: string, who: "primary" | "spouse") =>
       nwEntries
-        .filter((e: any) => e.category === category && (!owner || e.owner === owner))
-        .reduce((s: number, e: any) => s + parseFloat(e.value || "0"), 0);
+        .filter((e: any) => e.type !== "liability" && e.category === category && (e.owner === who || e.owner === "joint"))
+        .reduce((s: number, e: any) => s + parseFloat(e.value || "0") * (e.owner === "joint" ? 0.5 : 1), 0);
+    // Monthly contributions entered on the Net Worth accounts, as an annual figure.
+    const annualContrib = (category: string, who: "primary" | "spouse") =>
+      nwEntries
+        .filter((e: any) => e.type !== "liability" && e.category === category && (e.owner === who || e.owner === "joint"))
+        .reduce((s: number, e: any) => s + parseFloat(e.metadata?.monthlyContribution || "0") * 12 * (e.owner === "joint" ? 0.5 : 1), 0);
+    const accountSeeds = (who: "primary" | "spouse") => {
+      const rrsp = nwSum("RRSP", who);
+      const tfsa = nwSum("TFSA", who);
+      const nonReg = nwSum("Non-Registered", who);
+      const rrspC = annualContrib("RRSP", who);
+      const tfsaC = annualContrib("TFSA", who);
+      return {
+        rrspBalance: rrsp > 0 ? String(Math.round(rrsp)) : undefined,
+        tfsaBalance: tfsa > 0 ? String(Math.round(tfsa)) : undefined,
+        nonRegBalance: nonReg > 0 ? String(Math.round(nonReg)) : undefined,
+        annualContribution: rrspC > 0 ? String(Math.round(rrspC)) : undefined,
+        annualTfsaContribution: tfsaC > 0 ? String(Math.round(tfsaC)) : undefined,
+      };
+    };
 
     if (person === "spouse") {
-      const rrsp = nwSum("RRSP", "primary") + nwSum("RRSP", "joint");
-      const tfsa = nwSum("TFSA", "primary") + nwSum("TFSA", "joint");
-      const nonReg = nwSum(t.retirement.nonReg, "primary") + nwSum(t.retirement.nonReg, "joint");
       const dob = clientData.spouseDateOfBirth ? new Date(clientData.spouseDateOfBirth) : null;
       return {
         person: "spouse",
         currentAge: dob ? new Date().getFullYear() - dob.getFullYear() : undefined,
         retirementAge: clientData.spouseRetirementAge ?? undefined,
         desiredRetirementIncome: clientData.spouseDesiredRetirementIncome ?? undefined,
-        rrspBalance: rrsp > 0 ? String(Math.round(rrsp)) : undefined,
-        tfsaBalance: tfsa > 0 ? String(Math.round(tfsa)) : undefined,
-        nonRegBalance: nonReg > 0 ? String(Math.round(nonReg)) : undefined,
+        ...accountSeeds("spouse"),
       };
     }
 
-    const rrsp = nwSum("RRSP", "primary") + nwSum("RRSP", "joint");
-    const tfsa = nwSum("TFSA", "primary") + nwSum("TFSA", "joint");
-    const nonReg = nwSum(t.retirement.nonReg, "primary") + nwSum(t.retirement.nonReg, "joint");
     const pensionIncome = pensions.reduce((sum: number, p: any) => {
       if (
         p.pensionType === "dbpp" &&
@@ -1026,9 +1038,7 @@ export function RetirementTab({
       currentAge: dob ? new Date().getFullYear() - dob.getFullYear() : undefined,
       retirementAge: clientData.retirementAge ?? undefined,
       desiredRetirementIncome: clientData.desiredRetirementIncome ?? undefined,
-      rrspBalance: rrsp > 0 ? String(Math.round(rrsp)) : undefined,
-      tfsaBalance: tfsa > 0 ? String(Math.round(tfsa)) : undefined,
-      nonRegBalance: nonReg > 0 ? String(Math.round(nonReg)) : undefined,
+      ...accountSeeds("primary"),
       pensionIncome: pensionIncome > 0 ? String(Math.round(pensionIncome)) : undefined,
     };
   };
@@ -1067,6 +1077,8 @@ export function RetirementTab({
   }
 
   // ── Combined view calculation ────────────────────────────────────────────────
+  const nameOf = (who: "primary" | "spouse") =>
+    who === "spouse" ? (clientData?.spouseFirstName ?? t.common.spouse) : (clientName ?? t.common.primary);
   const combinedCalc = (() => {
     const p = primaryProjections[0];
     const s = spouseProjections[0];
@@ -1086,7 +1098,15 @@ export function RetirementTab({
       ((pEng?.fundingRateAtRetirement ?? Number(p?.successRate ?? 0)) +
         (sEng?.fundingRateAtRetirement ?? Number(s?.successRate ?? 0))) /
       (p && s ? 2 : 1);
-    return { totalPortfolio, totalDesired, totalSurplus, avgSuccess };
+    const mk = (who: "primary" | "spouse", proj: any, eng: any) => ({
+      who,
+      name: nameOf(who),
+      portfolio: eng?.portfolioAtRetirement ?? Number(proj?.projectedBalance ?? 0),
+      desired: Number(proj?.desiredRetirementIncome ?? 0),
+      surplus: eng?.annualSurplusAtRetirement ?? Number(proj?.shortfallSurplus ?? 0),
+    });
+    const rows = [p ? mk("primary", p, pEng) : null, s ? mk("spouse", s, sEng) : null].filter(Boolean) as ReturnType<typeof mk>[];
+    return { totalPortfolio, totalDesired, totalSurplus, avgSuccess, rows };
   })();
 
   const activeProjections =
@@ -1094,8 +1114,11 @@ export function RetirementTab({
       ? primaryProjections
       : view === "spouse"
         ? spouseProjections
-        : allProjections;
+        : [...primaryProjections, ...spouseProjections];
 
+  const firstOfPerson = new Set<number>(
+    [primaryProjections[0]?.id, spouseProjections[0]?.id].filter((x): x is number => typeof x === "number")
+  );
   return (
     <div>
       {/* Header */}
@@ -1120,50 +1143,6 @@ export function RetirementTab({
           </button>
         </div>
       </div>
-
-      {/* Combined summary */}
-      {view === "combined" && combinedCalc && (
-        <div className="border border-blue-200 bg-blue-50 rounded-xl p-5 mb-5">
-          <p className="text-xs font-semibold tracking-widest text-blue-600 uppercase mb-3">
-            {t.retirement.householdCombined}
-          </p>
-          <div className="grid grid-cols-4 gap-3">
-            {[
-              {
-                label: t.retirement.combinedPortfolio,
-                value: "$" + Math.round(combinedCalc.totalPortfolio).toLocaleString(),
-              },
-              {
-                label: t.retirement.combinedDesired,
-                value: "$" + Math.round(combinedCalc.totalDesired).toLocaleString() + "/yr",
-              },
-              {
-                label:
-                  combinedCalc.totalSurplus >= 0
-                    ? t.retirement.combinedSurplusNote
-                    : t.retirement.combinedShortfall,
-                value:
-                  "$" + Math.abs(Math.round(combinedCalc.totalSurplus)).toLocaleString() + "/yr",
-                color: combinedCalc.totalSurplus >= 0 ? "#16a34a" : "#dc2626",
-              },
-              {
-                label: t.retirement.avgFundingRate,
-                value: Math.round(combinedCalc.avgSuccess) + "%",
-              },
-            ].map((m, i) => (
-              <div key={i} className="bg-white rounded-lg px-3 py-2.5">
-                <p className="text-xs text-gray-500 mb-0.5">{m.label}</p>
-                <p
-                  className="text-sm font-semibold"
-                  style={{ color: (m as any).color ?? "#111827" }}
-                >
-                  {m.value}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Loading / empty */}
       {isLoading && <p className="text-sm text-gray-400 py-8 text-center">{t.common.loading}</p>}
@@ -1239,9 +1218,18 @@ export function RetirementTab({
                   : "#dc2626";
 
           return (
+            <React.Fragment key={proj.id}>
+            {view === "combined" && proj.id != null && firstOfPerson.has(proj.id) && (
+              <h4
+                className="text-sm font-bold text-gray-700 pt-2"
+                data-testid={`heading-person-${isPerson}`}
+              >
+                {personName}
+              </h4>
+            )}
             <div
-              key={proj.id}
               className="border border-gray-200 rounded-xl overflow-hidden hover:border-gray-300 transition-colors"
+              data-testid={`projection-card-${proj.id}`}
             >
               {/* Card header */}
               <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
@@ -1491,9 +1479,85 @@ export function RetirementTab({
                 )}
               </div>
             </div>
+            </React.Fragment>
           );
         })}
       </div>
+
+      {/* Combined summary */}
+      {view === "combined" && combinedCalc && (
+        <div className="border border-blue-200 bg-blue-50 rounded-xl p-5 mt-6" data-testid="combined-summary">
+          <p className="text-xs font-semibold tracking-widest text-blue-600 uppercase mb-3">
+            {t.retirement.householdCombined}
+          </p>
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              {
+                label: t.retirement.combinedPortfolio,
+                value: "$" + Math.round(combinedCalc.totalPortfolio).toLocaleString(),
+              },
+              {
+                label: t.retirement.combinedDesired,
+                value: "$" + Math.round(combinedCalc.totalDesired).toLocaleString() + "/yr",
+              },
+              {
+                label:
+                  combinedCalc.totalSurplus >= 0
+                    ? t.retirement.combinedSurplusNote
+                    : t.retirement.combinedShortfall,
+                value:
+                  "$" + Math.abs(Math.round(combinedCalc.totalSurplus)).toLocaleString() + "/yr",
+                color: combinedCalc.totalSurplus >= 0 ? "#16a34a" : "#dc2626",
+              },
+              {
+                label: t.retirement.avgFundingRate,
+                value: Math.round(combinedCalc.avgSuccess) + "%",
+              },
+            ].map((m, i) => (
+              <div key={i} className="bg-white rounded-lg px-3 py-2.5">
+                <p className="text-xs text-gray-500 mb-0.5">{m.label}</p>
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: (m as any).color ?? "#111827" }}
+                >
+                  {m.value}
+                </p>
+              </div>
+            ))}
+          </div>
+          <table className="w-full text-xs mt-4 bg-white rounded-lg overflow-hidden" data-testid="table-combined-breakdown">
+            <thead>
+              <tr className="text-gray-400 text-left border-b border-gray-100">
+                <th className="px-3 py-2 font-semibold"></th>
+                <th className="px-3 py-2 font-semibold text-right">{t.retirement.combinedPortfolio}</th>
+                <th className="px-3 py-2 font-semibold text-right">{t.retirement.combinedDesired}</th>
+                <th className="px-3 py-2 font-semibold text-right">Surplus / shortfall</th>
+              </tr>
+            </thead>
+            <tbody>
+              {combinedCalc.rows.map((r) => (
+                <tr key={r.who} className="border-b border-gray-50" data-testid={`row-combined-${r.who}`}>
+                  <td className="px-3 py-2 font-medium text-gray-700">{r.name}</td>
+                  <td className="px-3 py-2 text-right">${Math.round(r.portfolio).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right">${Math.round(r.desired).toLocaleString()}/yr</td>
+                  <td className="px-3 py-2 text-right" style={{ color: r.surplus >= 0 ? "#16a34a" : "#dc2626" }}>
+                    {r.surplus >= 0 ? "+" : "-"}${Math.abs(Math.round(r.surplus)).toLocaleString()}/yr
+                  </td>
+                </tr>
+              ))}
+              <tr className="font-semibold bg-blue-50/50" data-testid="row-combined-total">
+                <td className="px-3 py-2 text-gray-900">{t.retirement.householdCombined}</td>
+                <td className="px-3 py-2 text-right">${Math.round(combinedCalc.totalPortfolio).toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">${Math.round(combinedCalc.totalDesired).toLocaleString()}/yr</td>
+                <td className="px-3 py-2 text-right" style={{ color: combinedCalc.totalSurplus >= 0 ? "#16a34a" : "#dc2626" }}>
+                  {combinedCalc.totalSurplus >= 0 ? "+" : "-"}${Math.abs(Math.round(combinedCalc.totalSurplus)).toLocaleString()}/yr
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
     </div>
   );
 }

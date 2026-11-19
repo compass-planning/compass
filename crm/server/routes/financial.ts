@@ -23,6 +23,14 @@ import {
 } from "@shared/schema";
 import { isAuthenticated } from "../auth";
 import { safe, ownsClient, ownsPlan } from "../fpUtils";
+import { mirrorNwCardToDebt, mirrorDebtCardToNw, removeDebtForNw, removeNwForDebt, ensureCardLinks } from "../debtLink";
+
+// Debt writes: `type` is the Debt tab's name for category; the link id is server-managed.
+const debtBody = (body: any) => {
+  const { nwEntryId: _n, type, ...rest } = safe(body) as any;
+  if (rest.category == null && type != null) rest.category = type;
+  return rest;
+};
 import { eq, and, sql } from "drizzle-orm";
 import { runDrawdownStrategies, type DrawdownInput } from "../engine/drawdown";
 import { logger } from "../logger";
@@ -93,6 +101,7 @@ r.get("/clients/:clientId/financial-planning-overview", async (req: any, res: Re
 r.get("/clients/:id/net-worth", async (req: any, res: Response) => {
   const cid = +req.params.id;
   if (!await ownsClient(cid, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
+  await ensureCardLinks(cid);
   res.json(await db.select().from(netWorthEntries).where(eq(netWorthEntries.clientId, cid)));
 });
 
@@ -105,6 +114,7 @@ r.post("/clients/:id/net-worth", validate(netWorthEntrySchema), async (req: any,
     const [row] = await db.insert(netWorthEntries)
       .values({ clientId: cid, type, category, name, value, owner, notes, metadata } as any)
       .returning();
+    await mirrorNwCardToDebt(row);
     res.status(201).json(row);
   } catch (e: any) {
     logger.error("[net-worth/post]", e.message);
@@ -117,6 +127,7 @@ r.put("/net-worth/:id", validate(netWorthEntrySchema), async (req: any, res: Res
     .from(netWorthEntries).where(eq(netWorthEntries.id, +req.params.id));
   if (!ex || !await ownsClient(ex.clientId, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
   const [u] = await db.update(netWorthEntries).set(safe(req.body)).where(eq(netWorthEntries.id, ex.id)).returning();
+  await mirrorNwCardToDebt(u);
   res.json(u);
 });
 
@@ -125,27 +136,42 @@ r.delete("/net-worth/:id", async (req: any, res: Response) => {
     .from(netWorthEntries).where(eq(netWorthEntries.id, +req.params.id));
   if (!ex || !await ownsClient(ex.clientId, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
   await db.delete(netWorthEntries).where(eq(netWorthEntries.id, ex.id));
+  await removeDebtForNw(ex.id);
   res.json({ ok: true });
 });
 
 r.get("/clients/:clientId/liabilities", async (req: any, res: Response) => {
   const cid = +req.params.clientId;
   if (!await ownsClient(cid, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
+  await ensureCardLinks(cid);
   const [nwRows, debtRows] = await Promise.all([
     db.select({ id: netWorthEntries.id, name: netWorthEntries.name, category: netWorthEntries.category, value: netWorthEntries.value, metadata: netWorthEntries.metadata })
       .from(netWorthEntries).where(and(eq(netWorthEntries.clientId, cid), eq(netWorthEntries.type, "liability"))),
-    db.select({ id: debtEntries.id, name: debtEntries.name, category: debtEntries.category, balance: debtEntries.balance, interestRate: debtEntries.interestRate, minimumPayment: debtEntries.minimumPayment })
+    db.select({ id: debtEntries.id, name: debtEntries.name, category: debtEntries.category, balance: debtEntries.balance, interestRate: debtEntries.interestRate, minimumPayment: debtEntries.minimumPayment, payoffStrategy: debtEntries.payoffStrategy, nwEntryId: debtEntries.nwEntryId })
       .from(debtEntries).where(eq(debtEntries.clientId, cid)),
   ]);
-  const merged = nwRows.map(nw => {
-    const match = debtRows.find(d => d.name?.toLowerCase() === nw.name?.toLowerCase() || d.category?.toLowerCase() === nw.category?.toLowerCase());
-    const nwMonthly = (nw as any).metadata?.monthlyPayment ? Number((nw as any).metadata.monthlyPayment) : null;
+  const lc = (v?: string | null) => (v ?? "").trim().toLowerCase();
+  const usedDebt = new Set<number>();
+  // One row per liability. Its rate / payment / strategy come from the linked Debt entry (or, failing that, one with the same name).
+  const merged: any[] = nwRows.map(nw => {
+    const match = debtRows.find(d => d.nwEntryId === nw.id) ?? debtRows.find(d => d.nwEntryId == null && !usedDebt.has(d.id) && lc(d.name) === lc(nw.name));
+    if (match) usedDebt.add(match.id);
+    const meta: any = (nw as any).metadata ?? {};
+    const nwMonthly = meta.monthlyPayment ? Number(meta.monthlyPayment) : null;
     const monthlyPayment = nwMonthly ?? (match ? Number(match.minimumPayment) : null);
-    return { id: nw.id, name: nw.name, category: nw.category, balance: Number(nw.value), interestRate: match ? Number(match.interestRate) : null, minimumPayment: monthlyPayment, annualCost: monthlyPayment ? monthlyPayment * 12 : null, source: match ? "debt_entries" : "net_worth" };
+    const rate = match ? Number(match.interestRate) : (meta.interestRate != null && meta.interestRate !== "" ? Number(meta.interestRate) : null);
+    return {
+      id: nw.id, name: nw.name, category: nw.category, balance: Number(nw.value), interestRate: rate,
+      minimumPayment: monthlyPayment, annualCost: monthlyPayment ? monthlyPayment * 12 : null,
+      creditLimit: meta.creditLimit != null ? Number(meta.creditLimit) : null,
+      payoffStrategy: match?.payoffStrategy ?? null,
+      debtEntryId: match?.id ?? null, nwEntryId: nw.id,
+      source: match ? "debt_entries" : "net_worth",
+    };
   });
   debtRows.forEach(d => {
-    if (!merged.find(m => m.name?.toLowerCase() === d.name?.toLowerCase() || m.category?.toLowerCase() === d.category?.toLowerCase()))
-      merged.push({ id: d.id, name: d.name, category: d.category, balance: Number(d.balance), interestRate: Number(d.interestRate), minimumPayment: Number(d.minimumPayment), annualCost: Number(d.minimumPayment) * 12, source: "debt_entries" });
+    if (usedDebt.has(d.id) || (d.nwEntryId != null && nwRows.some(n => n.id === d.nwEntryId))) return;
+    merged.push({ id: d.id, name: d.name, category: d.category, balance: Number(d.balance), interestRate: Number(d.interestRate), minimumPayment: Number(d.minimumPayment), annualCost: Number(d.minimumPayment) * 12, payoffStrategy: d.payoffStrategy, debtEntryId: d.id, nwEntryId: null, source: "debt_entries" });
   });
   res.json(merged);
 });
@@ -408,34 +434,39 @@ r.delete("/education-savings/:id", async (req: any, res: Response) => {
 r.get("/clients/:id/debt", async (req: any, res: Response) => {
   const cid = +req.params.id;
   if (!await ownsClient(cid, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
+  await ensureCardLinks(cid);
   res.json(await db.select().from(debtEntries).where(eq(debtEntries.clientId, cid)));
 });
 
 r.get("/clients/:id/debt-entries", async (req: any, res: Response) => {
   const cid = +req.params.id;
   if (!await ownsClient(cid, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
+  await ensureCardLinks(cid);
   res.json(await db.select().from(debtEntries).where(eq(debtEntries.clientId, cid)));
 });
 
 r.post("/clients/:id/debt", async (req: any, res: Response) => {
   const cid = +req.params.id;
   if (!await ownsClient(cid, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
-  const [row] = await (db.insert(debtEntries) as any).values({ clientId: cid, ...safe(req.body) }).returning();
-  res.status(201).json(row);
+  const [row] = await (db.insert(debtEntries) as any).values({ clientId: cid, ...debtBody(req.body) }).returning();
+  await mirrorDebtCardToNw(row);
+  res.status(201).json((await db.select().from(debtEntries).where(eq(debtEntries.id, row.id)))[0] ?? row);
 });
 
 r.post("/clients/:id/debt-entries", validate(debtEntrySchema), async (req: any, res: Response) => {
   const cid = +req.params.id;
   if (!await ownsClient(cid, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
-  const [row] = await (db.insert(debtEntries) as any).values({ clientId: cid, ...safe(req.body.data ?? req.body) }).returning();
-  res.status(201).json(row);
+  const [row] = await (db.insert(debtEntries) as any).values({ clientId: cid, ...debtBody(req.body.data ?? req.body) }).returning();
+  await mirrorDebtCardToNw(row);
+  res.status(201).json((await db.select().from(debtEntries).where(eq(debtEntries.id, row.id)))[0] ?? row);
 });
 
 r.patch("/debt/:id", validate(debtPatchSchema), async (req: any, res: Response) => {
   const [ex] = await db.select({ id: debtEntries.id, clientId: debtEntries.clientId })
     .from(debtEntries).where(eq(debtEntries.id, +req.params.id));
   if (!ex || !await ownsClient(ex.clientId, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
-  const [u] = await db.update(debtEntries).set(safe(req.body)).where(eq(debtEntries.id, ex.id)).returning();
+  const [u] = await db.update(debtEntries).set(debtBody(req.body)).where(eq(debtEntries.id, ex.id)).returning();
+  await mirrorDebtCardToNw(u);
   res.json(u);
 });
 
@@ -443,23 +474,26 @@ r.put("/debt-entries/:id", validate(debtEntrySchema), async (req: any, res: Resp
   const [ex] = await db.select({ id: debtEntries.id, clientId: debtEntries.clientId })
     .from(debtEntries).where(eq(debtEntries.id, +req.params.id));
   if (!ex || !await ownsClient(ex.clientId, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
-  const [u] = await db.update(debtEntries).set(safe(req.body)).where(eq(debtEntries.id, ex.id)).returning();
+  const [u] = await db.update(debtEntries).set(debtBody(req.body)).where(eq(debtEntries.id, ex.id)).returning();
+  await mirrorDebtCardToNw(u);
   res.json(u);
 });
 
 r.delete("/debt/:id", async (req: any, res: Response) => {
-  const [ex] = await db.select({ id: debtEntries.id, clientId: debtEntries.clientId })
+  const [ex] = await db.select({ id: debtEntries.id, clientId: debtEntries.clientId, nwEntryId: debtEntries.nwEntryId, category: debtEntries.category })
     .from(debtEntries).where(eq(debtEntries.id, +req.params.id));
   if (!ex || !await ownsClient(ex.clientId, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
   await db.delete(debtEntries).where(eq(debtEntries.id, ex.id));
+  await removeNwForDebt(ex);
   res.json({ ok: true });
 });
 
 r.delete("/debt-entries/:id", async (req: any, res: Response) => {
-  const [ex] = await db.select({ id: debtEntries.id, clientId: debtEntries.clientId })
+  const [ex] = await db.select({ id: debtEntries.id, clientId: debtEntries.clientId, nwEntryId: debtEntries.nwEntryId, category: debtEntries.category })
     .from(debtEntries).where(eq(debtEntries.id, +req.params.id));
   if (!ex || !await ownsClient(ex.clientId, ((req as any).session?.staffId || 0))) return res.status(404).json({ message: "Not found" });
   await db.delete(debtEntries).where(eq(debtEntries.id, ex.id));
+  await removeNwForDebt(ex);
   res.json({ ok: true });
 });
 

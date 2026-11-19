@@ -3452,7 +3452,7 @@ const { data: plans = [] } = useClientPlans(selectedClientId ?? 0);
             )}
             {activeTab === "networth"   && <NetWorthWithSubtabs clientId={selectedClientId} client={selectedClient as any} />}
             {activeTab === "income"     && <IncomeSourcesTab     clientId={selectedClientId ?? undefined} />}
-            {activeTab === "retirement" && selectedClientId && <RetirementTab clientId={selectedClientId} clientName={(selectedClient as any)?.firstName} />}
+            {activeTab === "retirement" && selectedClientId && <RetirementTab clientId={selectedClientId} clientName={(selectedClient as any)?.firstName} person={(selectedClient as any)?.spouseFirstName ? person : "primary"} />}
             {activeTab === "insurance"  && <InsuranceTab     clientId={selectedClientId} planId={activePlanId} client={selectedClient} />}
             {activeTab === "resp"       && <RESPTab          clientId={selectedClientId} planId={activePlanId} />}
             {activeTab === "debt"       && <DebtTab          clientId={selectedClientId} planId={activePlanId} />}

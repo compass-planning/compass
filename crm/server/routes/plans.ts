@@ -21,6 +21,7 @@ import {
   verifyClientOwnership, verifyFpRecordOwnership, verifyPlanChildOwnership,
 } from "./middleware";
 import { logger } from "../logger";
+import { mirrorNwCardToDebt, mirrorDebtCardToNw, removeDebtForNw, removeNwForDebt, ensureCardLinks } from "../debtLink";
 
 export const plansRouter = Router();
 const router = plansRouter;
@@ -1209,6 +1210,7 @@ router.delete("/api/action-items/:id", isAuthenticated, async (req: any, res) =>
 router.get("/api/clients/:clientId/net-worth", isAuthenticated, async (req: any, res) => {
     const clientId = Number(req.params.clientId);
     if (!(await verifyClientOwnership(req, res, clientId))) return;
+    await ensureCardLinks(clientId);
     const entries = await storage.getNetWorthEntries(clientId);
     res.json(entries);
   });
@@ -1221,6 +1223,7 @@ router.post("/api/clients/:clientId/net-worth", isAuthenticated, async (req: any
       clientId, type, category, name, value: String(value),
       owner: owner ?? null, notes: notes ?? null, metadata: metadata ?? null,
     } as any);
+    await mirrorNwCardToDebt(entry as any);
     res.status(201).json(entry);
   });
 
@@ -1235,6 +1238,7 @@ router.put("/api/net-worth/:id", isAuthenticated, async (req: any, res) => {
     if (updates.value !== undefined) updates.value = String(updates.value);
     updates.updatedAt = new Date();
     const entry = await storage.updateNetWorthEntry(id, updates);
+    await mirrorNwCardToDebt(entry as any);
     res.json(entry);
   });
 
@@ -1242,6 +1246,7 @@ router.delete("/api/net-worth/:id", isAuthenticated, async (req: any, res) => {
     const id = Number(req.params.id);
     if (!(await verifyFpRecordOwnership(req, res, netWorthEntries, id))) return;
     await storage.deleteNetWorthEntry(id);
+    await removeDebtForNw(id);
     res.json({ success: true });
   });
 
@@ -1719,6 +1724,7 @@ router.delete("/api/education-savings/:id", isAuthenticated, async (req: any, re
 router.get("/api/clients/:clientId/debt-entries", isAuthenticated, async (req: any, res) => {
     const clientId = Number(req.params.clientId);
     if (!(await verifyClientOwnership(req, res, clientId))) return;
+    await ensureCardLinks(clientId);
     const entries = await storage.getDebtEntries(clientId);
     res.json(entries);
   });
@@ -1727,13 +1733,16 @@ router.post("/api/clients/:clientId/debt-entries", isAuthenticated, async (req: 
     try {
       const clientId = Number(req.params.clientId);
       if (!(await verifyClientOwnership(req, res, clientId))) return;
-      const { name, category, balance, interestRate, minimumPayment, term, priority, notes } = req.body;
+      const { name, category, type, balance, interestRate, minimumPayment, term, priority, notes, payoffStrategy } = req.body;
       const entry = await storage.createDebtEntry({
-        clientId, name, category: category || "other",
+        clientId, name, category: category || type || "other",
         balance: String(balance || "0"), interestRate: String(interestRate || "0"),
         minimumPayment: String(minimumPayment || "0"),
         term: term || null, priority: Number(priority || 0), notes: notes || null,
-      });
+        ...(payoffStrategy ? { payoffStrategy } : {}),
+      } as any);
+      // Credit cards are also a Net Worth liability
+      await mirrorDebtCardToNw(entry as any);
       res.status(201).json(entry);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -1746,14 +1755,22 @@ router.post("/api/clients/:clientId/debt-entries", isAuthenticated, async (req: 
 router.put("/api/debt-entries/:id", isAuthenticated, async (req: any, res) => {
     const id = Number(req.params.id);
     if (!(await verifyFpRecordOwnership(req, res, debtEntries, id))) return;
-    const updated = await storage.updateDebtEntry(id, req.body);
+    // Whitelist: the body may never move an entry to another client or forge the Net Worth link
+    const updates: Record<string, any> = {};
+    for (const k of ["name", "category", "balance", "interestRate", "minimumPayment", "term", "priority", "notes", "payoffStrategy"]) {
+      if (req.body[k] !== undefined) updates[k] = req.body[k];
+    }
+    const updated = await storage.updateDebtEntry(id, updates as any);
+    await mirrorDebtCardToNw(updated as any);
     res.json(updated);
   });
 
 router.delete("/api/debt-entries/:id", isAuthenticated, async (req: any, res) => {
     const id = Number(req.params.id);
     if (!(await verifyFpRecordOwnership(req, res, debtEntries, id))) return;
+    const [gone] = await db.select().from(debtEntries).where(eq(debtEntries.id, id));
     await storage.deleteDebtEntry(id);
+    if (gone) await removeNwForDebt(gone);
     res.json({ success: true });
   });
 
