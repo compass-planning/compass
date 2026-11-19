@@ -57,6 +57,7 @@ interface Policy {
   riders?: string;
   notes?: string;
   status?: string;
+  agentOfRecord?: boolean;
 }
 
 interface Props {
@@ -202,6 +203,22 @@ function StatusDot({ level }: { level: "low" | "medium" | "high" | "ok" | "warn"
 
 // ── Inline Edit Field ─────────────────────────────────────────────────────────
 
+function AorCheckbox({ checked, onChange, testId }: { checked: boolean; onChange: (v: boolean) => void; testId: string }) {
+  return (
+    <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none" onClick={(e) => e.stopPropagation()}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        data-testid={testId}
+        className="w-3.5 h-3.5 rounded"
+      />
+      Advisor is agent of record
+      <span className="text-[10px] text-slate-400">(counts toward Active Policies)</span>
+    </label>
+  );
+}
+
 function EditField({
   label,
   value,
@@ -319,7 +336,12 @@ function PolicyRow({
           <StatusDot level={risk} />
           <div className="min-w-0">
             <div className="text-xs font-semibold text-slate-900 truncate">{policy.type}</div>
-            <div className="text-[10px] text-slate-400 truncate">{policy.insured}</div>
+            <div className="text-[10px] text-slate-400 truncate">
+              {policy.insured}
+              {policy.agentOfRecord && (
+                <span data-testid="badge-aor" className="ml-1.5 text-[9px] font-bold uppercase text-violet-700 bg-violet-50 px-1 py-0.5 rounded">AOR</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -463,6 +485,11 @@ function PolicyRow({
                 />
                 <EditField label={t.common.notes} value={form.notes ?? ""} onChange={u("notes")} />
               </div>
+              <AorCheckbox
+                checked={!!form.agentOfRecord}
+                onChange={(v) => setForm((f) => ({ ...f, agentOfRecord: v }))}
+                testId="checkbox-agent-of-record-edit"
+              />
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   onClick={() => setEditing(false)}
@@ -503,6 +530,7 @@ function PolicyRow({
                 },
                 { label: t.insurance.beneficiary, value: policy.beneficiary || "—" },
                 { label: t.insurance.riders, value: policy.riders || "—" },
+                { label: "Agent of record", value: policy.agentOfRecord ? "Yes" : "No" },
               ].map(({ label, value }) => (
                 <div key={label}>
                   <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">
@@ -553,6 +581,7 @@ function AddPolicyForm({
     beneficiary: "",
     riders: "",
     notes: "",
+    agentOfRecord: false,
   });
   const [saving, setSaving] = useState(false);
   const u = (k: string) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -629,6 +658,13 @@ function AddPolicyForm({
             label={t.insurance.beneficiary}
             value={form.beneficiary}
             onChange={u("beneficiary")}
+          />
+        </div>
+        <div className="pb-2">
+          <AorCheckbox
+            checked={form.agentOfRecord}
+            onChange={(v) => setForm((f) => ({ ...f, agentOfRecord: v }))}
+            testId="checkbox-agent-of-record"
           />
         </div>
         <div className="flex items-center justify-end gap-2">

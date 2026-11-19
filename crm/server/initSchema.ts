@@ -105,6 +105,7 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS pension_type text;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS retained_by_staff_id integer;
 ALTER TABLE income_sources ADD COLUMN IF NOT EXISTS profile_synced text;
 ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS nw_entry_id integer;
+ALTER TABLE client_policies ADD COLUMN IF NOT EXISTS agent_of_record boolean DEFAULT false;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_language text DEFAULT 'en' NOT NULL;
 ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS plan_id integer;
 ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS payoff_strategy text;

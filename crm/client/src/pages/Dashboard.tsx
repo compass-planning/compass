@@ -13,6 +13,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 
 interface DashboardStats {
   totalAUM: number;
+  activePolicies?: number;
   activeClients: number;
   leadsCount: number;
   pendingSales: number;
@@ -82,12 +83,14 @@ function OverviewDashboard() {
     ? [
         { label: "Actif total géré",      value: statsLoading ? "—" : formatAUM(stats?.totalAUM ?? 0),     icon: DollarSign, color: "text-violet-600",   bg: "bg-violet-50",   href: "/clients" },
         { label: "Clients actifs",         value: statsLoading ? "—" : String(stats?.activeClients ?? 0),  icon: Users,      color: "text-violet-600",   bg: "bg-violet-50",   href: "/clients" },
+        { label: "Polices actives",        value: statsLoading ? "—" : String(stats?.activePolicies ?? 0), icon: ShieldCheck, color: "text-violet-600",  bg: "bg-violet-50",   href: "/clients" },
         { label: "Prospects en pipeline",  value: statsLoading ? "—" : String(stats?.leadsCount ?? 0),     icon: Target,     color: "text-amber-600",  bg: "bg-amber-50",  href: "/pipeline" },
         { label: "Propositions en cours",  value: statsLoading ? "—" : String(stats?.pendingSales ?? 0),   icon: Activity,   color: "text-violet-600", bg: "bg-violet-50", href: "/pipeline?stage=proposal" },
       ]
     : [
         { label: "Total AUM",         value: statsLoading ? "—" : formatAUM(stats?.totalAUM ?? 0),     icon: DollarSign, color: "text-violet-600",   bg: "bg-violet-50",   href: "/clients" },
         { label: "Active Clients",    value: statsLoading ? "—" : String(stats?.activeClients ?? 0),  icon: Users,      color: "text-violet-600",   bg: "bg-violet-50",   href: "/clients" },
+        { label: "Active Policies",   value: statsLoading ? "—" : String(stats?.activePolicies ?? 0), icon: ShieldCheck, color: "text-violet-600",  bg: "bg-violet-50",   href: "/clients" },
         { label: "Leads in Pipeline", value: statsLoading ? "—" : String(stats?.leadsCount ?? 0),     icon: Target,     color: "text-amber-600",  bg: "bg-amber-50",  href: "/pipeline" },
         { label: "Pending Proposals", value: statsLoading ? "—" : String(stats?.pendingSales ?? 0),   icon: Activity,   color: "text-violet-600", bg: "bg-violet-50", href: "/pipeline?stage=proposal" },
       ];
@@ -119,7 +122,7 @@ function OverviewDashboard() {
         </div>
 
         {/* ── KPI stat bar ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {kpiCards.map(s => (
             <button key={s.label} onClick={() => setLocation(s.href)}
               className="fp-insightled-card p-5 text-left hover:shadow-md transition-shadow group cursor-pointer">
@@ -242,11 +245,12 @@ function TeamStatsCards({ advisorIds }: { advisorIds: number[] }) {
   // /api/clients is already scoped server-side to this manager's team: their advisors' clients, their own,
   // and any they handed up and still retain. Filtering to advisorIds alone dropped the manager's own clients.
   const teamClients = allClients ?? [];
+  const { data: teamStats } = useDashboardStats(); // no staffId -> whole team's total for a sales manager
 
   return (
     <>
       <StatCard title={isFrench ? "Total clients" : "Total Clients"}       value={String(teamClients.length)} trend="" isPositive={true} icon={Briefcase}   color="bg-secondary/10 text-secondary" />
-      <StatCard title={isFrench ? "Polices actives" : "Active Policies"}   value="--"                         trend="" isPositive={true} icon={ShieldCheck}  color="bg-violet-500/10 text-violet-500" />
+      <StatCard title={isFrench ? "Polices actives" : "Active Policies"}   value={String(teamStats?.activePolicies ?? 0)} trend="" isPositive={true} icon={ShieldCheck}  color="bg-violet-500/10 text-violet-500" />
       <StatCard title={isFrench ? "Actions en attente" : "Pending Actions"} value="--"                        trend="" isPositive={true} icon={Activity}     color="bg-orange-500/10 text-orange-500" />
     </>
   );
@@ -335,6 +339,7 @@ function AdvisorDrillDown({ advisor, onBack }: { advisor: StaffMember; onBack: (
   });
 
   const clientCount = advisorClients?.length ?? 0;
+  const { data: advisorStats } = useDashboardStats(advisor.id);
 
   return (
     <div className="space-y-8">
@@ -375,8 +380,8 @@ function AdvisorDrillDown({ advisor, onBack }: { advisor: StaffMember; onBack: (
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title={isFrench ? "Clients actifs" : "Active Clients"}      value={String(clientCount)} trend="" isPositive={true} icon={Users}       color="bg-secondary/10 text-secondary" />
-        <StatCard title={isFrench ? "Actif total géré" : "Total AUM"}         value="--"                  trend="" isPositive={true} icon={TrendingUp}   color="bg-primary/10 text-primary" />
-        <StatCard title={isFrench ? "Polices actives" : "Active Policies"}    value="--"                  trend="" isPositive={true} icon={ShieldCheck}  color="bg-violet-500/10 text-violet-500" />
+        <StatCard title={isFrench ? "Actif total géré" : "Total AUM"}         value={new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", notation: "compact", maximumFractionDigits: 1 }).format(advisorStats?.totalAUM ?? 0)} trend="" isPositive={true} icon={TrendingUp}   color="bg-primary/10 text-primary" />
+        <StatCard title={isFrench ? "Polices actives" : "Active Policies"}    value={String(advisorStats?.activePolicies ?? 0)} trend="" isPositive={true} icon={ShieldCheck}  color="bg-violet-500/10 text-violet-500" />
         <StatCard title={isFrench ? "Actions en attente" : "Pending Actions"} value="--"                  trend="" isPositive={true} icon={Activity}     color="bg-orange-500/10 text-orange-500" />
       </div>
 

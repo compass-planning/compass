@@ -1739,6 +1739,7 @@ export const clientPolicies = pgTable("client_policies", {
   renewalDate:      text("renewal_date"),
   beneficiary:      text("beneficiary"),
   notes:            text("notes"),
+  agentOfRecord:    boolean("agent_of_record").default(false), // client's advisor is agent of record -> counts as an Active Policy on dashboards
   createdAt:        timestamp("created_at").defaultNow().notNull(),
   updatedAt:        timestamp("updated_at").defaultNow().notNull(),
 });

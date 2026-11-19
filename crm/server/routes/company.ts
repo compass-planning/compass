@@ -5,7 +5,7 @@ import { isAuthenticated } from "../auth";
 import { updateCompanySettingsSchema, PLAN_DEFINITIONS } from "@shared/schema";
 import { getStaffFromSession, getCompanyId, requireRole } from "./middleware";
 import { getVisibleClients } from "../access";
-import { aumForClients } from "../aum";
+import { aumForClients, activePoliciesForClients } from "../aum";
 
 export const companyRouter = Router();
 
@@ -167,6 +167,7 @@ companyRouter.get(
     if (!currentStaff?.companyId) {
       return res.json({
         totalAUM: 0,
+        activePolicies: 0,
         activeClients: 0,
         leadsCount: 0,
         pendingSales: 0,
@@ -183,6 +184,7 @@ companyRouter.get(
       if (role === "advisor" && staffIdParam !== currentStaff.id) {
         return res.json({
           totalAUM: 0,
+          activePolicies: 0,
           activeClients: 0,
           leadsCount: 0,
           pendingSales: 0,
@@ -198,6 +200,7 @@ companyRouter.get(
         ) {
           return res.json({
             totalAUM: 0,
+          activePolicies: 0,
             activeClients: 0,
             leadsCount: 0,
             pendingSales: 0,
@@ -208,6 +211,7 @@ companyRouter.get(
       if (!targetStaff || targetStaff.companyId !== currentStaff.companyId) {
         return res.json({
           totalAUM: 0,
+          activePolicies: 0,
           activeClients: 0,
           leadsCount: 0,
           pendingSales: 0,
@@ -239,8 +243,11 @@ companyRouter.get(
     // AUM = RRSP/TFSA/Non-Registered accounts marked "managed by Advisor / Brokerage" (see server/aum.ts).
     const totalAUM = await aumForClients(clientsList.map((c) => c.id));
 
+    const activePolicies = await activePoliciesForClients(clientsList.map((c) => c.id));
+
     res.json({
       totalAUM,
+      activePolicies,
       activeClients: clientsList.length,
       leadsCount: leadsList.filter((l) => !l.stage || l.stage !== "closed_won")
         .length,
