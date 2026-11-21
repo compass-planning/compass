@@ -49,6 +49,11 @@ import Accounting from "./pages/host/Accounting";
 import ServiceCases from "./pages/host/ServiceCases";
 import HostSettings from "./pages/host/HostSettings";
 import HostUsers from "./pages/host/HostUsers";
+import Security from "./pages/host/Security";
+import Accounts from "./pages/host/Accounts";
+import Issues from "./pages/host/Issues";
+import Uptime from "./pages/host/Uptime";
+import Privacy from "./pages/host/Privacy";
 import HostInbox from "./pages/host/HostInbox";
 import HostCalendar from "./pages/host/HostCalendar";
 
@@ -80,6 +85,11 @@ function HostRouter() {
       <Route path="/host/accounting" component={Accounting} />
       <Route path="/host/service" component={ServiceCases} />
       <Route path="/host/users" component={HostUsers} />
+      <Route path="/host/security" component={Security} />
+      <Route path="/host/accounts" component={Accounts} />
+      <Route path="/host/issues" component={Issues} />
+      <Route path="/host/uptime" component={Uptime} />
+      <Route path="/host/privacy" component={Privacy} />
       <Route path="/host/settings" component={HostSettings} />
       <Route path="/" component={HostDashboard} />
       <Route component={NotFound} />

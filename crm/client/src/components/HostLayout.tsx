@@ -14,6 +14,11 @@ import {
   Users,
   Mail,
   CalendarDays,
+  ShieldAlert,
+  CreditCard,
+  LifeBuoy,
+  Activity,
+  Scale,
 } from "lucide-react";
 
 const allNavItems = [
@@ -54,6 +59,11 @@ const allNavItems = [
     icon: Headphones,
     roles: ["admin", "service"],
   },
+  { label: "Accounts & Billing", path: "/host/accounts", icon: CreditCard, roles: ["admin", "accounting", "sales", "manager"] },
+  { label: "Client Issues", path: "/host/issues", icon: LifeBuoy, roles: ["admin", "service", "manager"] },
+  { label: "System Status", path: "/host/uptime", icon: Activity, roles: ["admin", "manager", "development"] },
+  { label: "Privacy / PIPEDA", path: "/host/privacy", icon: Scale, roles: ["admin", "manager"] },
+  { label: "Security", path: "/host/security", icon: ShieldAlert, roles: ["admin", "accounting", "manager"] },
   { label: "Users", path: "/host/users", icon: Users, roles: ["admin"] },
   {
     label: "Settings",

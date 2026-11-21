@@ -106,6 +106,52 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS retained_by_staff_id integer;
 ALTER TABLE income_sources ADD COLUMN IF NOT EXISTS profile_synced text;
 ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS nw_entry_id integer;
 ALTER TABLE client_policies ADD COLUMN IF NOT EXISTS agent_of_record boolean DEFAULT false;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS failed_login_count integer NOT NULL DEFAULT 0;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS locked_until timestamp;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS last_failed_login_at timestamp;
+CREATE TABLE IF NOT EXISTS security_events (
+  id serial PRIMARY KEY NOT NULL,
+  created_at timestamp NOT NULL DEFAULT now(),
+  type text NOT NULL,
+  email text,
+  staff_id integer,
+  company_id integer,
+  ip text,
+  user_agent text,
+  detail jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+ALTER TABLE security_events ADD COLUMN IF NOT EXISTS app text NOT NULL DEFAULT 'crm';
+CREATE TABLE IF NOT EXISTS public.planning_lockouts (
+  email text PRIMARY KEY, failed_count integer NOT NULL DEFAULT 0, locked_until timestamp, last_failed_at timestamp
+);
+CREATE INDEX IF NOT EXISTS security_events_type_ip_idx ON security_events (type, ip, created_at);
+CREATE INDEX IF NOT EXISTS security_events_staff_idx ON security_events (staff_id, created_at);
+CREATE TABLE IF NOT EXISTS uptime_checks (id serial PRIMARY KEY, checked_at timestamp NOT NULL DEFAULT now(), ok boolean NOT NULL, latency_ms integer, detail jsonb NOT NULL DEFAULT '{}'::jsonb);
+CREATE INDEX IF NOT EXISTS uptime_checks_at_idx ON uptime_checks (checked_at);
+CREATE TABLE IF NOT EXISTS incidents (id serial PRIMARY KEY, started_at timestamp NOT NULL, ended_at timestamp, kind text NOT NULL, source text NOT NULL DEFAULT 'monitor', detail jsonb NOT NULL DEFAULT '{}'::jsonb, note text);
+CREATE TABLE IF NOT EXISTS privacy_breaches (
+  id serial PRIMARY KEY, discovered_at date NOT NULL, occurred_at date, description text NOT NULL, data_types text,
+  individuals_affected integer, apps text NOT NULL DEFAULT 'both', rrosh text NOT NULL DEFAULT 'unassessed',
+  contained boolean NOT NULL DEFAULT false, opc_notified_at date, individuals_notified_at date,
+  status text NOT NULL DEFAULT 'open', notes text, created_by text, created_at timestamp NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS privacy_requests (
+  id serial PRIMARY KEY, app text NOT NULL DEFAULT 'crm', email text NOT NULL, kind text NOT NULL,
+  received_at date NOT NULL DEFAULT current_date, due_at date NOT NULL, status text NOT NULL DEFAULT 'open',
+  completed_at date, notes text, created_by text, created_at timestamp NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS plan_prices (app text NOT NULL, plan text NOT NULL, monthly_price numeric(10,2) NOT NULL DEFAULT 0, PRIMARY KEY (app, plan));
+CREATE TABLE IF NOT EXISTS login_devices (
+  id serial PRIMARY KEY NOT NULL,
+  staff_id integer NOT NULL,
+  device_hash text NOT NULL,
+  label text,
+  ip text,
+  user_agent text,
+  first_seen timestamp NOT NULL DEFAULT now(),
+  last_seen timestamp NOT NULL DEFAULT now(),
+  UNIQUE (staff_id, device_hash)
+);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_language text DEFAULT 'en' NOT NULL;
 ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS plan_id integer;
 ALTER TABLE debt_entries ADD COLUMN IF NOT EXISTS payoff_strategy text;

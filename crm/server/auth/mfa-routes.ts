@@ -22,6 +22,7 @@ import { db } from "../db";
 import { staff } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "../logger";
+import { onMfaFailure } from "../security";
 import {
   generateTotpSetup,
   verifyAndEnrol,
@@ -169,6 +170,7 @@ export function registerMfaRoutes(app: Express): void {
 
       const valid = verifyTotpToken((member as any).totpSecret, token);
       if (!valid) {
+        void onMfaFailure(req, (req.session as any)?.staffId);
         return res.status(401).json({ message: "Invalid code. Please try again.", verified: false });
       }
 
@@ -209,6 +211,7 @@ export function registerMfaRoutes(app: Express): void {
     try {
       const valid = await verifyRecoveryCode(staffId, code);
       if (!valid) {
+        void onMfaFailure(req, staffId);
         return res.status(401).json({ message: "Invalid or already-used recovery code." });
       }
 

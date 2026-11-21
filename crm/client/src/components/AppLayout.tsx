@@ -2,6 +2,7 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { LayoutDashboard, Users, PieChart, Settings, Search, UserCog, LogOut, Mail, CalendarDays, Mic, TrendingUp, Building2, CheckSquare, PanelLeftClose, PanelLeftOpen, LineChart, Sun } from "lucide-react";
+import { ReportProblem } from "@/components/ReportProblem";
 import { useAuth } from "@/hooks/use-auth";
 import { CompassLogo } from "@/components/CompassLogo";
 import { useCurrentStaff } from "@/hooks/use-users";
@@ -173,6 +174,8 @@ export function AppLayout({ children, sidebarOverride, noPadding, workspaceMode 
               </button>
             </div>
           ) : (
+            <div>
+            <div className="mb-2"><ReportProblem /></div>
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
               <div className="flex items-center space-x-3">
                 {user?.profileImageUrl ? (
@@ -195,6 +198,7 @@ export function AppLayout({ children, sidebarOverride, noPadding, workspaceMode 
                 <LogOut className="w-3.5 h-3.5" />
                 <span>{t("action.signOut")}</span>
               </button>
+            </div>
             </div>
           )}
         </div>}

@@ -9,6 +9,7 @@ import { staff, hostUsers } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { logger } from "../logger";
+import { onLoginFailure, onLoginSuccess, isLocked, recordEvent, LOCKOUT_MINUTES } from "../security";
 
 export function registerAuthRoutes(app: Express): void {
   app.post("/api/auth/login", validate(loginSchema), async (req: any, res) => {
@@ -28,6 +29,7 @@ export function registerAuthRoutes(app: Express): void {
       if (hostUser && hostUser.isActive && hostUser.passwordHash) {
         const valid = await bcrypt.compare(password, hostUser.passwordHash);
         if (valid) {
+          void recordEvent("login_success", req, { email: normalizedEmail, detail: { host: true } });
           return new Promise<void>((resolve, reject) => {
             req.session.regenerate((err: any) => {
               if (err) return reject(err);
@@ -59,15 +61,28 @@ export function registerAuthRoutes(app: Express): void {
         .select()
         .from(staff)
         .where(eq(staff.email, normalizedEmail));
-      if (!staffMember)
+      if (!staffMember) {
+        await onLoginFailure(req, normalizedEmail, null);
         return res.status(401).json({ message: "Invalid email or password" });
+      }
+      const lockedUntil = await isLocked(staffMember.id);
+      if (lockedUntil) {
+        await recordEvent("login_blocked_locked", req, { email: normalizedEmail, staffId: staffMember.id, companyId: staffMember.companyId });
+        const mins = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000));
+        return res.status(423).json({ message: `Too many failed sign-in attempts. This account is locked for another ${mins} minute${mins === 1 ? "" : "s"}.` });
+      }
       if (!staffMember.passwordHash)
         return res
           .status(401)
           .json({ message: "Password not set. Contact your administrator." });
       const valid = await bcrypt.compare(password, staffMember.passwordHash);
-      if (!valid)
+      if (!valid) {
+        const { locked } = await onLoginFailure(req, normalizedEmail, { id: staffMember.id, companyId: staffMember.companyId, firstName: staffMember.firstName });
+        if (locked)
+          return res.status(423).json({ message: `Too many failed sign-in attempts. This account is locked for ${LOCKOUT_MINUTES} minutes.` });
         return res.status(401).json({ message: "Invalid email or password" });
+      }
+      void onLoginSuccess(req, { id: staffMember.id, companyId: staffMember.companyId, email: staffMember.email, firstName: staffMember.firstName });
 
       return new Promise<void>((resolve, reject) => {
         req.session.regenerate((err: any) => {

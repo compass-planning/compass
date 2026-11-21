@@ -1,6 +1,7 @@
 import { useLanguage } from "@/contexts/LanguageContext";
 import { HostLayout } from "@/components/HostLayout";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   Building2,
   Users,
@@ -72,6 +73,9 @@ export default function HostDashboard() {
             Overview of all platform operations
           </p>
         </div>
+
+        <OverviewStrip />
+        <SecurityBanner />
 
         <div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
@@ -222,3 +226,53 @@ export default function HostDashboard() {
   );
 }
 
+
+/** Shows only when something needs attention (lockout, brute-force alert, MFA failure) in the last 24h. Hidden for roles without access. */
+function SecurityBanner() {
+  const { data } = useQuery<{ counts: Record<string, number>; locked: unknown[] }>({
+    queryKey: ["/api/crm/host/security/summary?range=24h"],
+    retry: false,
+    refetchInterval: 60000,
+  });
+  if (!data) return null;
+  const c = data.counts ?? {};
+  const n = (c.account_locked ?? 0) + (c.ip_burst_alert ?? 0) + (c.mfa_failed ?? 0);
+  if (n === 0) return null;
+  return (
+    <Link href="/host/security">
+      <div
+        className="rounded-2xl border border-red-200 bg-red-50 text-red-800 p-4 flex items-center justify-between cursor-pointer hover:bg-red-100"
+        data-testid="banner-dashboard-security"
+      >
+        <span className="text-sm font-medium">
+          {n} security alert{n === 1 ? "" : "s"} in the last 24 hours
+          {data.locked?.length ? ` · ${data.locked.length} account${data.locked.length === 1 ? "" : "s"} locked now` : ""}
+        </span>
+        <span className="text-xs font-semibold">Review →</span>
+      </div>
+    </Link>
+  );
+}
+
+
+/** One-glance status across the whole platform; each chip only shows for roles that can open that page. */
+function OverviewStrip() {
+  const { data } = useQuery<any>({ queryKey: ["/api/crm/host/overview"], retry: false, refetchInterval: 60000 });
+  if (!data) return null;
+  const chips: { key: string; label: string; href: string; bad: boolean }[] = [];
+  if (data.uptime) chips.push({ key: "uptime", label: data.uptime.status === "up" ? "Systems up" : data.uptime.status === "unknown" ? "Monitoring starting" : `Systems ${data.uptime.status}`, href: "/host/uptime", bad: data.uptime.status === "down" || data.uptime.status === "stale" });
+  if (data.security) chips.push({ key: "security", label: `${data.security.alerts} security alert${data.security.alerts === 1 ? "" : "s"} (24h)`, href: "/host/security", bad: data.security.alerts > 0 });
+  if (data.issues) chips.push({ key: "issues", label: `${data.issues.open} open client issue${data.issues.open === 1 ? "" : "s"}`, href: "/host/issues", bad: data.issues.open > 0 });
+  if (data.privacy) chips.push({ key: "privacy", label: `${data.privacy.open_breaches} open breach${data.privacy.open_breaches === 1 ? "" : "es"} · ${data.privacy.overdue_requests} overdue request${data.privacy.overdue_requests === 1 ? "" : "s"}`, href: "/host/privacy", bad: data.privacy.open_breaches + data.privacy.overdue_requests > 0 });
+  if (data.accounts) chips.push({ key: "accounts", label: `${data.accounts.accounts} accounts · ${data.accounts.past_due} past due`, href: "/host/accounts", bad: data.accounts.past_due > 0 });
+  if (!chips.length) return null;
+  return (
+    <div className="flex gap-2 flex-wrap" data-testid="strip-overview">
+      {chips.map((c) => (
+        <Link key={c.key} href={c.href}>
+          <span data-testid={`chip-${c.key}`} className={`cursor-pointer text-xs font-semibold px-3 py-1.5 rounded-full border ${c.bad ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{c.label}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}

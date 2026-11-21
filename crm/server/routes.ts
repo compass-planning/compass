@@ -38,6 +38,7 @@ import { marketRouter }        from "./routes/market";
 import { notificationsRouter } from "./routes/notifications";
 import { hostRouter }          from "./routes/host";
 import { tasksRouter }         from "./routes/tasks";
+import { supportRouter }       from "./routes/support";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -74,6 +75,7 @@ export async function registerRoutes(
   app.use("/api/market",         marketRouter);
   app.use("/api/notifications",  isAuthenticated, denyHostUsers, notificationsRouter);
   app.use("/api/tasks",          isAuthenticated, denyHostUsers, tasksRouter);
+  app.use("/api/support",        isAuthenticated, denyHostUsers, supportRouter);
   app.use("/api/host",           hostRouter);
 
   app.use(meetingsRouter);
